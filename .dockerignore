@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-web
+generated
+.env
+.git
+npm-debug.log
+Dockerfile.*
+docker-compose.yml

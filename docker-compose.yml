@@ -1,0 +1,75 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: scanweb
+      POSTGRES_PASSWORD: scanweb
+      POSTGRES_DB: scanwebcheckbug
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scanweb -d scanwebcheckbug"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:5173,http://localhost:8080
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scanweb:scanweb@postgres:5432/scanwebcheckbug
+      ALLOW_PRIVATE_TARGETS: "false"
+    ports:
+      - "4000:4000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://scanweb:scanweb@postgres:5432/scanwebcheckbug
+      PYTHON_BIN: python3
+      SCAN_TIMEOUT_MS: 30000
+      WORKER_CONCURRENCY: 2
+      ALLOW_PRIVATE_TARGETS: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        VITE_API_BASE_URL: http://localhost:4000
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
