@@ -42,6 +42,21 @@ docker compose up --build
 
 Open http://localhost:5173.
 
+To run the web on a different server port, edit `.env`:
+
+```bash
+WEB_PORT=8081
+API_PORT=4000
+API_PUBLIC_URL=http://YOUR_SERVER_IP:4000
+CORS_ORIGIN=http://YOUR_SERVER_IP:8081
+```
+
+Then redeploy:
+
+```bash
+./Deploy.sh
+```
+
 ## Scanner Notes
 
 The scanner infers backend language and database from public signals only:
