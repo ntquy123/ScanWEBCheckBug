@@ -2,8 +2,18 @@
 set -Eeuo pipefail
 
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-BRANCH="${BRANCH:-}"
+BRANCH_INPUT="${BRANCH-}"
+PULL_IMAGES_INPUT="${PULL_IMAGES-}"
+API_PORT_INPUT="${API_PORT-}"
+WEB_PORT_INPUT="${WEB_PORT-}"
+BRANCH="$BRANCH_INPUT"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
+PULL_IMAGES="false"
+API_PORT="4000"
+WEB_PORT="5173"
+
+export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
+export COMPOSE_DOCKER_CLI_BUILD="${COMPOSE_DOCKER_CLI_BUILD:-1}"
 
 log() {
   printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -69,19 +79,35 @@ if [ ! -f ".env" ] && [ -f ".env.example" ]; then
   cp .env.example .env
 fi
 
-run compose -f "$COMPOSE_FILE" pull --ignore-pull-failures
+if [ -f ".env" ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
+BRANCH="${BRANCH_INPUT:-${BRANCH:-}}"
+PULL_IMAGES="${PULL_IMAGES_INPUT:-${PULL_IMAGES:-false}}"
+API_PORT="${API_PORT_INPUT:-${API_PORT:-4000}}"
+WEB_PORT="${WEB_PORT_INPUT:-${WEB_PORT:-5173}}"
+
+if [ "$PULL_IMAGES" = "true" ]; then
+  run compose -f "$COMPOSE_FILE" pull --ignore-pull-failures
+else
+  log "Bo qua docker compose pull. Dat PULL_IMAGES=true ./Deploy.sh neu muon pull image moi."
+fi
+
 run compose -f "$COMPOSE_FILE" up --build -d
 run compose -f "$COMPOSE_FILE" ps
 
 log "Kiem tra API health"
 if command_exists curl; then
-  curl --fail --silent --show-error http://localhost:4000/api/health || true
+  curl --fail --silent --show-error "http://localhost:${API_PORT}/api/health" || true
   printf '\n'
 else
   log "curl chua duoc cai, bo qua health check."
 fi
 
 log "Deploy xong"
-printf 'Web: http://<SERVER_IP>:5173\n'
-printf 'API: http://<SERVER_IP>:4000/api/health\n'
+printf 'Web: http://<SERVER_IP>:%s\n' "$WEB_PORT"
+printf 'API: http://<SERVER_IP>:%s/api/health\n' "$API_PORT"
 printf 'Logs: docker compose logs -f api worker web\n'

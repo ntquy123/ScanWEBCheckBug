@@ -57,6 +57,13 @@ Then redeploy:
 ./Deploy.sh
 ```
 
+By default `Deploy.sh` skips `docker compose pull` to keep deploys faster on
+slow servers. To refresh base images too:
+
+```bash
+PULL_IMAGES=true ./Deploy.sh
+```
+
 ## Scanner Notes
 
 The scanner infers backend language and database from public signals only:
