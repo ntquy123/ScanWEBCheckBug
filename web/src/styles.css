@@ -296,6 +296,8 @@ textarea {
 .metric-card,
 .result-panel,
 .findings-panel,
+.exposure-action,
+.exposure-panel,
 .http-details {
   background: #ffffff;
   border: 1px solid #d8e0e7;
@@ -344,6 +346,83 @@ textarea {
 .findings-panel {
   margin-top: 18px;
   padding: 16px;
+}
+
+.exposure-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px;
+}
+
+.exposure-action h2 {
+  margin: 0;
+  color: #17202a;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.exposure-action button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  color: #ffffff;
+  background: #1f7a6f;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.exposure-action button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.exposure-panel {
+  margin-top: 18px;
+  padding: 16px;
+}
+
+.exposure-summary,
+.exposure-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: #516271;
+  font-size: 12px;
+}
+
+.exposure-summary {
+  margin-top: 14px;
+}
+
+.exposure-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.exposure-item {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: #f7f9fb;
+  border: 1px solid #e5ebef;
+  border-radius: 6px;
+}
+
+.exposure-item > p {
+  margin: 0;
+  color: #263442;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .panel-title {
@@ -455,7 +534,8 @@ textarea {
 }
 
 .candidate ul,
-.finding ul {
+.finding ul,
+.exposure-item ul {
   display: grid;
   gap: 8px;
   padding: 0;
@@ -464,7 +544,8 @@ textarea {
 }
 
 .candidate li,
-.finding li {
+.finding li,
+.exposure-item li {
   display: grid;
   gap: 4px;
   padding: 10px;
@@ -473,15 +554,21 @@ textarea {
   border-radius: 6px;
 }
 
+.exposure-item li {
+  background: #ffffff;
+}
+
 .candidate li span,
-.finding li span {
+.finding li span,
+.exposure-item li span {
   color: #516271;
   font-size: 12px;
   font-weight: 800;
 }
 
 .candidate li p,
-.finding li p {
+.finding li p,
+.exposure-item li p {
   margin: 0;
   color: #263442;
   font-size: 13px;
@@ -489,7 +576,8 @@ textarea {
 }
 
 .candidate code,
-.finding code {
+.finding code,
+.exposure-item code {
   display: block;
   max-height: 96px;
   overflow: auto;
@@ -572,6 +660,11 @@ textarea {
   .result-grid,
   .http-details dl {
     grid-template-columns: 1fr;
+  }
+
+  .exposure-action {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

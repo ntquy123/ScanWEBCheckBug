@@ -6,8 +6,9 @@ import { Server as SocketServer } from "socket.io";
 import { z } from "zod";
 
 import { env, isOriginAllowed } from "./config.js";
+import { runExposureScan } from "./exposureScanner.js";
 import { createScanQueue, createScanQueueEvents } from "./queue.js";
-import type { ScanProgress, ScanResult } from "./types.js";
+import type { ExposureScanHints, ScanProgress, ScanResult } from "./types.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -54,6 +55,19 @@ const scanRequestSchema = z
       });
     }
   });
+
+const exposureScanSchema = z.object({
+  url: z.string().trim().min(3).max(2048),
+  hints: z
+    .object({
+      backendLanguages: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+      frameworks: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+      databases: z.array(z.string().trim().min(1).max(80)).max(12).optional(),
+      webServer: z.string().trim().max(120).optional(),
+      operatingSystem: z.string().trim().max(120).optional(),
+    })
+    .optional(),
+});
 
 app.use(helmet());
 app.use(cors(corsOptions));
@@ -130,6 +144,34 @@ app.get("/api/scans/:jobId", async (req, res) => {
   });
 });
 
+app.post("/api/exposure-scans", async (req, res) => {
+  const parsed = exposureScanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "Yeu cau scan file public khong hop le",
+      issues: parsed.error.issues,
+    });
+    return;
+  }
+
+  const normalizedUrl = normalizeTargetUrl(parsed.data.url);
+  if (!normalizedUrl) {
+    res.status(400).json({
+      error: "Chi ho tro URL http hoac https",
+    });
+    return;
+  }
+
+  try {
+    const result = await runExposureScan(normalizedUrl, normalizeExposureHints(parsed.data.hints));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Exposure scan failed",
+    });
+  }
+});
+
 io.on("connection", (socket) => {
   socket.on("scan:join", (jobId: string) => {
     if (typeof jobId === "string" && jobId.length <= 128) {
@@ -201,6 +243,20 @@ function normalizeTargetUrl(input: string): string | null {
 
 function scanRoom(jobId: string): string {
   return `scan:${jobId}`;
+}
+
+function normalizeExposureHints(hints: z.infer<typeof exposureScanSchema>["hints"]): ExposureScanHints {
+  if (!hints) {
+    return {};
+  }
+
+  return {
+    ...(hints.backendLanguages ? { backendLanguages: hints.backendLanguages } : {}),
+    ...(hints.frameworks ? { frameworks: hints.frameworks } : {}),
+    ...(hints.databases ? { databases: hints.databases } : {}),
+    ...(hints.webServer ? { webServer: hints.webServer } : {}),
+    ...(hints.operatingSystem ? { operatingSystem: hints.operatingSystem } : {}),
+  };
 }
 
 function parseScanResult(value: unknown): ScanResult | undefined {

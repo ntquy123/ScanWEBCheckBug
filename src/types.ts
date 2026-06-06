@@ -83,3 +83,47 @@ export interface ScanProgress {
   result?: ScanResult;
   error?: string;
 }
+
+export type ExposureCategory =
+  | "environment"
+  | "secret"
+  | "docker"
+  | "vcs"
+  | "php"
+  | "wordpress"
+  | "backup"
+  | "server"
+  | "log"
+  | "directory";
+
+export interface ExposureScanHints {
+  backendLanguages?: string[];
+  frameworks?: string[];
+  databases?: string[];
+  webServer?: string;
+  operatingSystem?: string;
+}
+
+export interface ExposureFinding {
+  path: string;
+  url: string;
+  category: ExposureCategory;
+  severity: FindingSeverity;
+  statusCode: number;
+  contentType?: string;
+  bytesRead: number;
+  confidence: number;
+  description: string;
+  evidence: Evidence[];
+}
+
+export interface ExposureScanResult {
+  scannedAt: string;
+  durationMs: number;
+  baseUrl: string;
+  checkedCount: number;
+  foundCount: number;
+  profile: ExposureScanHints;
+  findings: ExposureFinding[];
+  notes: string[];
+}

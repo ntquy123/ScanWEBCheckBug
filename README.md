@@ -103,6 +103,14 @@ curl -X POST http://103.12.77.207:4000/api/scans \
   -d '{"url":"https://example.com/login","method":"POST","bodyType":"form","bodyForm":"action=wp_manga_signin\nlogin=test@example.com\npass=test123\nrememberme=forever\nnonce=replace_with_nonce","checkSqlInjection":true}'
 ```
 
+Exposure scan after fingerprint:
+
+```bash
+curl -X POST http://103.12.77.207:4000/api/exposure-scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/wp-admin/admin-ajax.php","hints":{"backendLanguages":["PHP"],"frameworks":["WordPress"],"webServer":"nginx","operatingSystem":"Linux/Unix likely"}}'
+```
+
 ## Scanner Notes
 
 The scanner infers backend language and database from public signals only:

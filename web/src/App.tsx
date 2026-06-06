@@ -4,6 +4,7 @@ import {
   Bug,
   Code2,
   Database,
+  FileSearch,
   LoaderCircle,
   MonitorCog,
   Radar,
@@ -76,6 +77,29 @@ interface SecurityFinding {
   recommendation?: string;
 }
 
+interface ExposureFinding {
+  path: string;
+  url: string;
+  category: string;
+  severity: "info" | "low" | "medium" | "high";
+  statusCode: number;
+  contentType?: string;
+  bytesRead: number;
+  confidence: number;
+  description: string;
+  evidence: Evidence[];
+}
+
+interface ExposureScanResult {
+  scannedAt: string;
+  durationMs: number;
+  baseUrl: string;
+  checkedCount: number;
+  foundCount: number;
+  findings: ExposureFinding[];
+  notes: string[];
+}
+
 interface ScanProgress {
   status: ScanStatus;
   stage: string;
@@ -110,8 +134,11 @@ export default function App() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ScanProgress>(initialProgress);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [exposureResult, setExposureResult] = useState<ExposureScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [exposureError, setExposureError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isExposureScanning, setIsExposureScanning] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const activeJobRef = useRef<string | null>(null);
 
@@ -222,6 +249,8 @@ export default function App() {
     setIsSubmitting(true);
     setError(null);
     setResult(null);
+    setExposureResult(null);
+    setExposureError(null);
     setProgress({
       status: "queued",
       stage: "submit",
@@ -276,6 +305,46 @@ export default function App() {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function startExposureScan() {
+    if (!result) {
+      return;
+    }
+
+    setIsExposureScanning(true);
+    setExposureError(null);
+    setExposureResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/exposure-scans`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: result.http.finalUrl || result.http.inputUrl,
+          hints: {
+            backendLanguages: result.backendLanguages.map((item) => item.name),
+            frameworks: result.frameworks.map((item) => item.name),
+            databases: result.databases.map((item) => item.name),
+            webServer: result.serverFingerprint.webServer,
+            operatingSystem: result.serverFingerprint.operatingSystem,
+          },
+        }),
+      });
+
+      const payload = (await response.json()) as ExposureScanResult & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Khong scan duoc file public");
+      }
+
+      setExposureResult(payload);
+    } catch (scanError) {
+      setExposureError(scanError instanceof Error ? scanError.message : "Exposure scan failed");
+    } finally {
+      setIsExposureScanning(false);
     }
   }
 
@@ -475,6 +544,31 @@ export default function App() {
         {result ? <FindingsPanel findings={result.securityFindings ?? []} /> : null}
 
         {result ? (
+          <section className="exposure-action">
+            <div>
+              <h2>Exposed file check</h2>
+            </div>
+            <button type="button" onClick={startExposureScan} disabled={isExposureScanning}>
+              {isExposureScanning ? (
+                <LoaderCircle className="spin" size={18} aria-hidden="true" />
+              ) : (
+                <FileSearch size={18} aria-hidden="true" />
+              )}
+              <span>{isExposureScanning ? "Scanning" : "Scan exposed files"}</span>
+            </button>
+          </section>
+        ) : null}
+
+        {exposureError ? (
+          <div className="error-line">
+            <AlertTriangle size={18} aria-hidden="true" />
+            <span>{exposureError}</span>
+          </div>
+        ) : null}
+
+        {exposureResult ? <ExposurePanel result={exposureResult} /> : null}
+
+        {result ? (
           <section className="http-details">
             <h2>HTTP evidence</h2>
             <dl>
@@ -622,6 +716,56 @@ function FindingsPanel({ findings }: { findings: SecurityFinding[] }) {
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+function ExposurePanel({ result }: { result: ExposureScanResult }) {
+  return (
+    <section className="exposure-panel">
+      <div className="panel-title">
+        <FileSearch size={20} aria-hidden="true" />
+        <h2>Exposed files</h2>
+      </div>
+
+      <div className="exposure-summary">
+        <span>Base: {result.baseUrl}</span>
+        <span>Checked: {result.checkedCount}</span>
+        <span>Found: {result.foundCount}</span>
+        <span>Duration: {result.durationMs}ms</span>
+      </div>
+
+      {result.findings.length === 0 ? (
+        <p className="empty-state">No listed public file was confirmed.</p>
+      ) : (
+        <div className="exposure-list">
+          {result.findings.map((finding) => (
+            <article className="exposure-item" key={`${finding.category}:${finding.path}`}>
+              <div className="finding-head">
+                <strong>{finding.path}</strong>
+                <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+              </div>
+              <p>{finding.description}</p>
+              <div className="exposure-meta">
+                <span>HTTP {finding.statusCode}</span>
+                <span>{finding.category}</span>
+                <span>{formatConfidence(finding.confidence)}</span>
+                <span>{finding.bytesRead} bytes sampled</span>
+              </div>
+              <ul>
+                {finding.evidence.map((item, index) => (
+                  <li key={`${item.source}:${index}`}>
+                    <span>{item.source}</span>
+                    <p>{item.detail}</p>
+                    {item.value ? <code>{item.value}</code> : null}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      )}
+
     </section>
   );
 }
