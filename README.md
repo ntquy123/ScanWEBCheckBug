@@ -129,6 +129,10 @@ curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
 curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/login","method":"POST","bodyType":"form","bodyForm":"login=test\npass=test123","scenario":"time","hints":{"backendLanguages":["Node.js"],"webServer":"nginx","operatingSystem":"Linux/Unix likely"}}'
+
+curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/login","method":"POST","bodyType":"form","bodyForm":"login=test\npass=test123","scenario":"time","hints":{"backendLanguages":["C# / ASP.NET"],"frameworks":["ASP.NET"],"databases":["Oracle Database"]}}'
 ```
 
 ## Scanner Notes

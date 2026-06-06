@@ -32,7 +32,7 @@ interface FetchSample {
   durationMs: number;
 }
 
-type Dbms = "MySQL / MariaDB" | "PostgreSQL" | "Microsoft SQL Server" | "SQLite";
+type Dbms = "MySQL / MariaDB" | "PostgreSQL" | "Microsoft SQL Server" | "Oracle Database" | "SQLite";
 
 const MAX_BODY_BYTES = 48 * 1024;
 const MAX_MUTATION_TARGETS = 4;
@@ -57,6 +57,11 @@ const SQL_ERROR_PATTERNS: Array<[Dbms, RegExp, string]> = [
     "Microsoft SQL Server",
     /(microsoft sql server|sql server|odbc sql server|sqlsrv|system\.data\.sqlclient|unclosed quotation mark|incorrect syntax near)/i,
     "Microsoft SQL Server error text exposed",
+  ],
+  [
+    "Oracle Database",
+    /(ora-\d{5}|oracle error|oracleexception|system\.data\.oracleclient|oracle\.manageddataaccess|odp\.net|quoted string not properly terminated|sql command not properly ended|missing expression|from keyword not found where expected)/i,
+    "Oracle Database error text exposed",
   ],
   ["SQLite", /(sqlite|sqlite3|sql error|near ".+": syntax error)/i, "SQLite error text exposed"],
 ];
@@ -213,7 +218,7 @@ async function runTimeTarget(
   let checked = 0;
   const candidates = dbmsCandidates.filter((dbms): dbms is Dbms => isSupportedTimeDbms(dbms));
 
-  for (const dbms of candidates.slice(0, 3)) {
+  for (const dbms of candidates.slice(0, 4)) {
     const payload = buildTimeProbe(target.originalValue, dbms);
     if (!payload) {
       continue;
@@ -457,6 +462,12 @@ function buildTimeProbe(value: string, dbms: Dbms): string | null {
     return numeric ? `${value}; WAITFOR DELAY '0:0:${delay}'--` : `${value}'; WAITFOR DELAY '0:0:${delay}'--`;
   }
 
+  if (dbms === "Oracle Database") {
+    return numeric
+      ? `${value} AND 1=DBMS_PIPE.RECEIVE_MESSAGE('SCANWEB',${delay})`
+      : `${value}' AND 1=DBMS_PIPE.RECEIVE_MESSAGE('SCANWEB',${delay})--`;
+  }
+
   return null;
 }
 
@@ -481,19 +492,30 @@ function inferDbms(hints: ExposureScanHints): string[] {
   if (/sql server|mssql|sqlserver|asp\.net/.test(text)) {
     dbms.push("Microsoft SQL Server");
   }
+  if (/oracle|oracledb|oracle database|odp\.net|manageddataaccess|oci8|cx_oracle/.test(text)) {
+    dbms.push("Oracle Database");
+  }
+  if (/\.net|dotnet|asp\.net|c#|csharp|kestrel|iis/.test(text)) {
+    dbms.push("Microsoft SQL Server", "Oracle Database");
+  }
   if (/sqlite/.test(text)) {
     dbms.push("SQLite");
   }
   if (/node|express|fastify|nestjs|next\.js|nextjs/.test(text)) {
-    dbms.push("PostgreSQL", "MySQL / MariaDB", "Microsoft SQL Server");
+    dbms.push("PostgreSQL", "MySQL / MariaDB", "Microsoft SQL Server", "Oracle Database");
   }
 
   const unique = Array.from(new Set(dbms));
-  return unique.length ? unique : ["MySQL / MariaDB", "PostgreSQL", "Microsoft SQL Server"];
+  return unique.length ? unique : ["MySQL / MariaDB", "PostgreSQL", "Microsoft SQL Server", "Oracle Database"];
 }
 
 function isSupportedTimeDbms(dbms: string): dbms is Dbms {
-  return dbms === "MySQL / MariaDB" || dbms === "PostgreSQL" || dbms === "Microsoft SQL Server";
+  return (
+    dbms === "MySQL / MariaDB" ||
+    dbms === "PostgreSQL" ||
+    dbms === "Microsoft SQL Server" ||
+    dbms === "Oracle Database"
+  );
 }
 
 function detectSqlError(text: string): { dbms: Dbms; detail: string; index: number } | null {
