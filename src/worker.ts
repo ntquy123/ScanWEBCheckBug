@@ -34,7 +34,7 @@ async function runPythonScanner(job: Job<ScanJobData, ScanResult>): Promise<Scan
     status: "running",
     stage: "starting",
     percent: 5,
-    message: "Dang khoi dong scanner Python",
+    message: `Dang khoi dong scanner Python (${job.data.method})`,
   } satisfies ScanProgress);
 
   return new Promise<ScanResult>((resolve, reject) => {
@@ -42,7 +42,7 @@ async function runPythonScanner(job: Job<ScanJobData, ScanResult>): Promise<Scan
     let stdoutBuffer = "";
     let result: ScanResult | undefined;
 
-    const child = spawn(env.pythonBin, [scannerPath, job.data.url], {
+    const child = spawn(env.pythonBin, [scannerPath], {
       env: {
         ...process.env,
         ALLOW_PRIVATE_TARGETS: env.allowPrivateTargets ? "1" : "0",
@@ -50,6 +50,15 @@ async function runPythonScanner(job: Job<ScanJobData, ScanResult>): Promise<Scan
       },
       windowsHide: true,
     });
+
+    child.stdin.end(
+      JSON.stringify({
+        url: job.data.url,
+        method: job.data.method,
+        ...(job.data.bodyJson ? { bodyJson: job.data.bodyJson } : {}),
+        checkSqlInjection: job.data.checkSqlInjection,
+      }),
+    );
 
     const timeout = setTimeout(() => {
       child.kill();

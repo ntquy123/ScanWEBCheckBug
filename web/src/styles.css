@@ -19,7 +19,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -107,7 +108,8 @@ input {
   outline: none;
 }
 
-.input-row input:focus {
+.input-row input:focus,
+.body-editor textarea:focus {
   border-color: #2a9d8f;
   box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.16);
 }
@@ -129,6 +131,81 @@ input {
 .input-row button:disabled {
   cursor: wait;
   opacity: 0.72;
+}
+
+.advanced-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.method-toggle {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 72px);
+  min-height: 36px;
+  padding: 3px;
+  background: #edf3f6;
+  border: 1px solid #c9d3dc;
+  border-radius: 6px;
+}
+
+.method-toggle button {
+  color: #425466;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.method-toggle button.active {
+  color: #ffffff;
+  background: #1f7a6f;
+}
+
+.check-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  color: #425466;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.check-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1f7a6f;
+}
+
+.body-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.body-editor label {
+  color: #425466;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.body-editor textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  padding: 12px 14px;
+  color: #17202a;
+  background: #fbfcfd;
+  border: 1px solid #c9d3dc;
+  border-radius: 6px;
+  outline: none;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .progress-area {
@@ -197,7 +274,7 @@ input {
 }
 
 .summary-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
 .result-grid {
@@ -207,6 +284,7 @@ input {
 
 .metric-card,
 .result-panel,
+.findings-panel,
 .http-details {
   background: #ffffff;
   border: 1px solid #d8e0e7;
@@ -252,6 +330,11 @@ input {
   padding: 16px;
 }
 
+.findings-panel {
+  margin-top: 18px;
+  padding: 16px;
+}
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -277,25 +360,29 @@ input {
   font-size: 14px;
 }
 
-.candidate-list {
+.candidate-list,
+.finding-list {
   display: grid;
   gap: 14px;
   margin-top: 14px;
 }
 
-.candidate {
+.candidate,
+.finding {
   display: grid;
   gap: 10px;
 }
 
-.candidate-head {
+.candidate-head,
+.finding-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.candidate-head strong {
+.candidate-head strong,
+.finding-head strong {
   overflow-wrap: anywhere;
 }
 
@@ -322,7 +409,42 @@ input {
   background: #ffe2d4;
 }
 
-.candidate ul {
+.severity {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.severity.high {
+  color: #8a1f11;
+  background: #ffe2d4;
+}
+
+.severity.medium {
+  color: #765300;
+  background: #fff1bf;
+}
+
+.severity.low {
+  color: #0f5c68;
+  background: #dff4f6;
+}
+
+.severity.info {
+  color: #314155;
+  background: #e8edf2;
+}
+
+.finding small {
+  color: #516271;
+  font-size: 12px;
+}
+
+.candidate ul,
+.finding ul {
   display: grid;
   gap: 8px;
   padding: 0;
@@ -330,7 +452,8 @@ input {
   list-style: none;
 }
 
-.candidate li {
+.candidate li,
+.finding li {
   display: grid;
   gap: 4px;
   padding: 10px;
@@ -339,20 +462,23 @@ input {
   border-radius: 6px;
 }
 
-.candidate li span {
+.candidate li span,
+.finding li span {
   color: #516271;
   font-size: 12px;
   font-weight: 800;
 }
 
-.candidate li p {
+.candidate li p,
+.finding li p {
   margin: 0;
   color: #263442;
   font-size: 13px;
   line-height: 1.45;
 }
 
-.candidate code {
+.candidate code,
+.finding code {
   display: block;
   max-height: 96px;
   overflow: auto;
@@ -364,6 +490,20 @@ input {
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.recommendation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  color: #263442;
+  background: #f4f8f7;
+  border: 1px solid #d8e9e5;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .http-details {

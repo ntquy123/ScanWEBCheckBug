@@ -1,10 +1,14 @@
 import {
   Activity,
   AlertTriangle,
+  Bug,
+  Code2,
   Database,
   LoaderCircle,
+  MonitorCog,
   Radar,
   Server,
+  ShieldAlert,
   ShieldCheck,
   Wifi,
 } from "lucide-react";
@@ -15,6 +19,7 @@ import { io, type Socket } from "socket.io-client";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 
 type ScanStatus = "queued" | "running" | "completed" | "failed";
+type ScanMethod = "GET" | "POST";
 
 interface Evidence {
   source: string;
@@ -35,15 +40,23 @@ interface ScanResult {
   http: {
     inputUrl: string;
     finalUrl: string;
+    method: ScanMethod;
     statusCode: number;
     title?: string;
     server?: string;
     poweredBy?: string;
     contentType?: string;
   };
+  serverFingerprint: {
+    webServer: string;
+    operatingSystem: string;
+    confidence: number;
+    evidence: Evidence[];
+  };
   backendLanguages: FingerprintCandidate[];
   frameworks: FingerprintCandidate[];
   databases: FingerprintCandidate[];
+  securityFindings: SecurityFinding[];
   summary: {
     backendLanguage: string;
     backendConfidence: number;
@@ -51,6 +64,14 @@ interface ScanResult {
     databaseConfidence: number;
   };
   notes: string[];
+}
+
+interface SecurityFinding {
+  title: string;
+  severity: "info" | "low" | "medium" | "high";
+  confidence: number;
+  evidence: Evidence[];
+  recommendation?: string;
 }
 
 interface ScanProgress {
@@ -77,6 +98,9 @@ const initialProgress: ScanProgress = {
 
 export default function App() {
   const [targetUrl, setTargetUrl] = useState("");
+  const [method, setMethod] = useState<ScanMethod>("GET");
+  const [bodyJson, setBodyJson] = useState('{\n  "username": "test",\n  "password": "test"\n}');
+  const [checkSqlInjection, setCheckSqlInjection] = useState(true);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ScanProgress>(initialProgress);
   const [result, setResult] = useState<ScanResult | null>(null);
@@ -153,6 +177,15 @@ export default function App() {
       return;
     }
 
+    if (method === "POST" && bodyJson.trim()) {
+      try {
+        JSON.parse(bodyJson);
+      } catch {
+        setError("Body JSON khong hop le");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     setError(null);
     setResult(null);
@@ -169,7 +202,12 @@ export default function App() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ url: nextUrl }),
+        body: JSON.stringify({
+          url: nextUrl,
+          method,
+          checkSqlInjection,
+          ...(method === "POST" && bodyJson.trim() ? { bodyJson: bodyJson.trim() } : {}),
+        }),
       });
 
       const payload = (await response.json()) as {
@@ -260,6 +298,44 @@ export default function App() {
                 <span>Scan</span>
               </button>
             </div>
+            <div className="advanced-controls">
+              <div className="method-toggle" aria-label="HTTP method">
+                <button
+                  type="button"
+                  className={method === "GET" ? "active" : ""}
+                  onClick={() => setMethod("GET")}
+                >
+                  GET
+                </button>
+                <button
+                  type="button"
+                  className={method === "POST" ? "active" : ""}
+                  onClick={() => setMethod("POST")}
+                >
+                  POST
+                </button>
+              </div>
+              <label className="check-toggle">
+                <input
+                  type="checkbox"
+                  checked={checkSqlInjection}
+                  onChange={(event) => setCheckSqlInjection(event.target.checked)}
+                />
+                <Bug size={16} aria-hidden="true" />
+                <span>SQLi probe</span>
+              </label>
+            </div>
+            {method === "POST" ? (
+              <div className="body-editor">
+                <label htmlFor="body-json">Body JSON</label>
+                <textarea
+                  id="body-json"
+                  value={bodyJson}
+                  onChange={(event) => setBodyJson(event.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+            ) : null}
           </form>
 
           <div className="progress-area" aria-live="polite">
@@ -299,6 +375,18 @@ export default function App() {
             confidence={result?.summary.databaseConfidence ?? 0}
           />
           <MetricCard
+            icon={Server}
+            label="Web server"
+            value={result?.serverFingerprint?.webServer ?? "Unknown"}
+            confidence={result?.serverFingerprint?.confidence ?? 0}
+          />
+          <MetricCard
+            icon={MonitorCog}
+            label="OS guess"
+            value={result?.serverFingerprint?.operatingSystem ?? "Unknown"}
+            confidence={result?.serverFingerprint?.confidence ?? 0}
+          />
+          <MetricCard
             icon={Activity}
             label="HTTP status"
             value={result ? String(result.http.statusCode) : "-"}
@@ -312,10 +400,16 @@ export default function App() {
           <CandidatePanel icon={Database} title="Database" candidates={result?.databases ?? []} />
         </section>
 
+        {result ? <FindingsPanel findings={result.securityFindings ?? []} /> : null}
+
         {result ? (
           <section className="http-details">
             <h2>HTTP evidence</h2>
             <dl>
+              <div>
+                <dt>Method</dt>
+                <dd>{result.http.method ?? "-"}</dd>
+              </div>
               <div>
                 <dt>Final URL</dt>
                 <dd>{result.http.finalUrl}</dd>
@@ -412,6 +506,48 @@ function CandidatePanel({
         </div>
       )}
     </article>
+  );
+}
+
+function FindingsPanel({ findings }: { findings: SecurityFinding[] }) {
+  return (
+    <section className="findings-panel">
+      <div className="panel-title">
+        <ShieldAlert size={20} aria-hidden="true" />
+        <h2>Security findings</h2>
+      </div>
+
+      {findings.length === 0 ? (
+        <p className="empty-state">No finding from this response.</p>
+      ) : (
+        <div className="finding-list">
+          {findings.map((finding) => (
+            <article className="finding" key={`${finding.title}:${finding.severity}`}>
+              <div className="finding-head">
+                <strong>{finding.title}</strong>
+                <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+              </div>
+              <small>{formatConfidence(finding.confidence)}</small>
+              <ul>
+                {finding.evidence.map((item, index) => (
+                  <li key={`${item.source}:${index}`}>
+                    <span>{item.source}</span>
+                    <p>{item.detail}</p>
+                    {item.value ? <code>{item.value}</code> : null}
+                  </li>
+                ))}
+              </ul>
+              {finding.recommendation ? (
+                <p className="recommendation">
+                  <Code2 size={15} aria-hidden="true" />
+                  <span>{finding.recommendation}</span>
+                </p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

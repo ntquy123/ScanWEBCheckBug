@@ -24,13 +24,30 @@ const io = new SocketServer(httpServer, {
   cors: corsOptions,
 });
 
-const scanRequestSchema = z.object({
-  url: z.string().trim().min(3).max(2048),
-});
+const scanRequestSchema = z
+  .object({
+    url: z.string().trim().min(3).max(2048),
+    method: z.enum(["GET", "POST"]).default("GET"),
+    bodyJson: z.string().max(32768).optional(),
+    checkSqlInjection: z.boolean().default(true),
+  })
+  .superRefine((data, ctx) => {
+    if (data.method === "POST" && data.bodyJson?.trim()) {
+      try {
+        JSON.parse(data.bodyJson);
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          path: ["bodyJson"],
+          message: "Body JSON khong hop le",
+        });
+      }
+    }
+  });
 
 app.use(helmet());
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "64kb" }));
+app.use(express.json({ limit: "128kb" }));
 
 app.get("/api/health", (_req, res) => {
   res.json({
@@ -59,6 +76,11 @@ app.post("/api/scans", async (req, res) => {
 
   const job = await scanQueue.add("fingerprint", {
     url: normalizedUrl,
+    method: parsed.data.method,
+    ...(parsed.data.method === "POST" && parsed.data.bodyJson?.trim()
+      ? { bodyJson: parsed.data.bodyJson.trim() }
+      : {}),
+    checkSqlInjection: parsed.data.checkSqlInjection,
     requestedAt: new Date().toISOString(),
   });
 

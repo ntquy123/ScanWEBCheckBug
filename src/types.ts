@@ -2,8 +2,13 @@ export type ScanStatus = "queued" | "running" | "completed" | "failed";
 
 export type CandidateCategory = "backend_language" | "framework" | "database";
 
+export type ScanMethod = "GET" | "POST";
+
 export interface ScanJobData {
   url: string;
+  method: ScanMethod;
+  bodyJson?: string;
+  checkSqlInjection: boolean;
   requestedAt: string;
 }
 
@@ -23,6 +28,7 @@ export interface FingerprintCandidate {
 export interface ScanHttpInfo {
   inputUrl: string;
   finalUrl: string;
+  method: ScanMethod;
   statusCode: number;
   title?: string;
   server?: string;
@@ -30,13 +36,32 @@ export interface ScanHttpInfo {
   contentType?: string;
 }
 
+export interface ServerFingerprint {
+  webServer: string;
+  operatingSystem: string;
+  confidence: number;
+  evidence: Evidence[];
+}
+
+export type FindingSeverity = "info" | "low" | "medium" | "high";
+
+export interface SecurityFinding {
+  title: string;
+  severity: FindingSeverity;
+  confidence: number;
+  evidence: Evidence[];
+  recommendation?: string;
+}
+
 export interface ScanResult {
   scannedAt: string;
   durationMs: number;
   http: ScanHttpInfo;
+  serverFingerprint: ServerFingerprint;
   backendLanguages: FingerprintCandidate[];
   frameworks: FingerprintCandidate[];
   databases: FingerprintCandidate[];
+  securityFindings: SecurityFinding[];
   summary: {
     backendLanguage: string;
     backendConfidence: number;

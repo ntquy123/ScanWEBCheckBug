@@ -71,6 +71,30 @@ slow servers. To refresh base images too:
 PULL_IMAGES=true ./Deploy.sh
 ```
 
+## Advanced Request
+
+GET scan:
+
+```bash
+curl -X POST http://103.12.77.207:4000/api/scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/?id=1","method":"GET","checkSqlInjection":true}'
+```
+
+POST scan with JSON body:
+
+```bash
+curl -X POST http://103.12.77.207:4000/api/scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/api/login","method":"POST","bodyJson":"{\"username\":\"test\",\"password\":\"test\"}","checkSqlInjection":true}'
+```
+
+Check a job:
+
+```bash
+curl http://103.12.77.207:4000/api/scans/<JOB_ID>
+```
+
 ## Scanner Notes
 
 The scanner infers backend language and database from public signals only:
