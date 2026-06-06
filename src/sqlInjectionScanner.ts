@@ -14,6 +14,8 @@ interface MutableTarget {
   label: string;
   originalValue: string;
   mutate(nextValue: string): HttpSpec;
+  mutateOperator?(operator: "ne" | "eq", operand: string): HttpSpec;
+  mutateWhere?(script: string): HttpSpec;
 }
 
 interface HttpSpec {
@@ -32,7 +34,13 @@ interface FetchSample {
   durationMs: number;
 }
 
-type Dbms = "MySQL / MariaDB" | "PostgreSQL" | "Microsoft SQL Server" | "Oracle Database" | "SQLite";
+type Dbms =
+  | "MySQL / MariaDB"
+  | "PostgreSQL"
+  | "Microsoft SQL Server"
+  | "Oracle Database"
+  | "MongoDB"
+  | "SQLite";
 
 const MAX_BODY_BYTES = 48 * 1024;
 const MAX_MUTATION_TARGETS = 4;
@@ -63,6 +71,11 @@ const SQL_ERROR_PATTERNS: Array<[Dbms, RegExp, string]> = [
     /(ora-\d{5}|oracle error|oracleexception|system\.data\.oracleclient|oracle\.manageddataaccess|odp\.net|quoted string not properly terminated|sql command not properly ended|missing expression|from keyword not found where expected)/i,
     "Oracle Database error text exposed",
   ],
+  [
+    "MongoDB",
+    /(mongo(?:server)?error|mongodb|mongoose|casterror|bsonerror|objectid|unknown top level operator|unknown operator|cannot nest \$ under|where is not allowed|\$where|e11000 duplicate key)/i,
+    "MongoDB/Mongoose error text exposed",
+  ],
   ["SQLite", /(sqlite|sqlite3|sql error|near ".+": syntax error)/i, "SQLite error text exposed"],
 ];
 
@@ -84,7 +97,7 @@ export async function runSqlInjectionScan(request: SqlInjectionScanRequest): Pro
 
   if (request.scenario === "inband") {
     for (const target of targets) {
-      checkedCount += await runInbandTarget(target, baseline, findings);
+      checkedCount += await runInbandTarget(target, baseline, inferredDbms, findings);
     }
   } else {
     for (const target of targets.slice(0, MAX_TIME_TARGETS)) {
@@ -94,7 +107,7 @@ export async function runSqlInjectionScan(request: SqlInjectionScanRequest): Pro
 
   return buildResult(startedAt, request.scenario, checkedCount, inferredDbms, findings, [
     "Safe SQLi check uses limited probes only and does not extract database data.",
-    "In-band checks look for SQL error text and boolean response differences.",
+    "In-band checks look for SQL/NoSQL error text and boolean response differences.",
     "Time-based checks use short database-specific delay probes and compare response timing.",
   ]);
 }
@@ -143,29 +156,30 @@ function normalizeTargetUrl(input: string): string {
 async function runInbandTarget(
   target: MutableTarget,
   baseline: FetchSample,
+  dbmsCandidates: string[],
   findings: SqlInjectionFinding[],
 ): Promise<number> {
   let checked = 0;
 
   const errorProbe = await fetchSample(target.mutate(buildQuoteProbe(target.originalValue)), BASE_TIMEOUT_MS);
   checked += 1;
-  const sqlError = detectSqlError(errorProbe.body);
-  if (sqlError) {
+  const databaseError = detectDatabaseError(errorProbe.body);
+  if (databaseError) {
     findings.push(
       buildFinding({
         scenario: "inband",
         target: target.label,
-        dbms: sqlError.dbms,
+        dbms: databaseError.dbms,
         severity: "high",
         confidence: 0.86,
-        description: "Quote probe caused public SQL error text in the response",
+        description: "Quote probe caused public database error text in the response",
         evidence: [
           metricEvidence("baseline", baseline),
           metricEvidence("probe", errorProbe),
           {
             source: "body:error",
-            detail: sqlError.detail,
-            value: surroundingText(errorProbe.body, sqlError.index),
+            detail: databaseError.detail,
+            value: surroundingText(errorProbe.body, databaseError.index),
           },
         ],
       }),
@@ -206,6 +220,77 @@ async function runInbandTarget(
     );
   }
 
+  if (dbmsCandidates.includes("MongoDB") && target.mutateOperator) {
+    checked += await runMongoOperatorTarget(target, baseline, findings);
+  }
+
+  return checked;
+}
+
+async function runMongoOperatorTarget(
+  target: MutableTarget,
+  baseline: FetchSample,
+  findings: SqlInjectionFinding[],
+): Promise<number> {
+  const trueProbe = await fetchSample(target.mutateOperator!("ne", "__scanweb_never__"), BASE_TIMEOUT_MS);
+  const falseProbe = await fetchSample(target.mutateOperator!("eq", "__scanweb_never__"), BASE_TIMEOUT_MS);
+  const checked = 2;
+
+  const trueError = detectDatabaseError(trueProbe.body);
+  const falseError = detectDatabaseError(falseProbe.body);
+  const mongoError = [trueError, falseError].find((error) => error?.dbms === "MongoDB");
+  if (mongoError) {
+    findings.push(
+      buildFinding({
+        scenario: "inband",
+        target: target.label,
+        dbms: "MongoDB",
+        severity: "high",
+        confidence: 0.82,
+        description: "MongoDB operator probe caused public MongoDB/Mongoose error text",
+        evidence: [
+          metricEvidence("baseline", baseline),
+          metricEvidence("operator-probe", trueError?.dbms === "MongoDB" ? trueProbe : falseProbe),
+          {
+            source: "body:error",
+            detail: mongoError.detail,
+            value: surroundingText((trueError?.dbms === "MongoDB" ? trueProbe : falseProbe).body, mongoError.index),
+          },
+        ],
+      }),
+    );
+    return checked;
+  }
+
+  const trueSimilarity = responseSimilarity(baseline, trueProbe);
+  const falseSimilarity = responseSimilarity(baseline, falseProbe);
+  const pairSimilarity = responseSimilarity(trueProbe, falseProbe);
+
+  if (falseSimilarity >= 0.68 && trueSimilarity <= 0.58 && pairSimilarity <= 0.58) {
+    findings.push(
+      buildFinding({
+        scenario: "inband",
+        target: target.label,
+        dbms: "MongoDB",
+        severity: "medium",
+        confidence: 0.68,
+        description: "MongoDB operator predicates changed the response shape",
+        evidence: [
+          metricEvidence("baseline", baseline),
+          metricEvidence("$ne-predicate", trueProbe),
+          metricEvidence("$eq-predicate", falseProbe),
+          {
+            source: "response:diff",
+            detail: "$ne predicate differed while $eq predicate stayed close to baseline",
+            value: `baseline/$ne=${trueSimilarity.toFixed(2)}, baseline/$eq=${falseSimilarity.toFixed(
+              2,
+            )}, $ne/$eq=${pairSimilarity.toFixed(2)}`,
+          },
+        ],
+      }),
+    );
+  }
+
   return checked;
 }
 
@@ -218,13 +303,13 @@ async function runTimeTarget(
   let checked = 0;
   const candidates = dbmsCandidates.filter((dbms): dbms is Dbms => isSupportedTimeDbms(dbms));
 
-  for (const dbms of candidates.slice(0, 4)) {
-    const payload = buildTimeProbe(target.originalValue, dbms);
-    if (!payload) {
+  for (const dbms of candidates.slice(0, 5)) {
+    const probeSpec = buildTimeProbeSpec(target, dbms);
+    if (!probeSpec) {
       continue;
     }
 
-    const probe = await fetchSample(target.mutate(payload), TIME_TIMEOUT_MS);
+    const probe = await fetchSample(probeSpec, TIME_TIMEOUT_MS);
     checked += 1;
 
     const delta = probe.durationMs - baseline.durationMs;
@@ -267,7 +352,7 @@ function buildFinding(input: {
   return {
     ...input,
     recommendation:
-      "Use parameterized queries/prepared statements, validate input server-side, and keep detailed SQL errors out of public responses.",
+      "Use parameterized queries/prepared statements or strict query builders, reject operator objects such as $ne/$where, validate input server-side, and keep detailed database errors out of public responses.",
   };
 }
 
@@ -296,6 +381,24 @@ function buildGetTargets(spec: HttpSpec): MutableTarget[] {
       });
       return { ...spec, url: nextUrl.toString() };
     },
+    mutateOperator(operator: "ne" | "eq", operand: string) {
+      const nextUrl = new URL(spec.url);
+      const nextPairs = Array.from(nextUrl.searchParams.entries());
+      nextUrl.search = "";
+      nextPairs.forEach(([pairKey, pairValue], pairIndex) => {
+        if (pairIndex === index) {
+          nextUrl.searchParams.append(`${pairKey}[$${operator}]`, operand);
+        } else {
+          nextUrl.searchParams.append(pairKey, pairValue);
+        }
+      });
+      return { ...spec, url: nextUrl.toString() };
+    },
+    mutateWhere(script: string) {
+      const nextUrl = new URL(spec.url);
+      nextUrl.searchParams.set("$where", script);
+      return { ...spec, url: nextUrl.toString() };
+    },
   }));
 }
 
@@ -310,6 +413,16 @@ function buildFormTargets(spec: HttpSpec): MutableTarget[] {
         pairIndex === index ? nextValue : pairValue,
       ] satisfies [string, string]);
       return { ...spec, bodyForm: formatFormText(mutated) };
+    },
+    mutateOperator(operator: "ne" | "eq", operand: string) {
+      const mutated = pairs.map(([pairKey, pairValue], pairIndex) => [
+        pairIndex === index ? `${pairKey}[$${operator}]` : pairKey,
+        pairIndex === index ? operand : pairValue,
+      ] satisfies [string, string]);
+      return { ...spec, bodyForm: formatFormText(mutated) };
+    },
+    mutateWhere(script: string) {
+      return { ...spec, bodyForm: formatFormText([...pairs, ["$where", script]]) };
     },
   }));
 }
@@ -337,6 +450,24 @@ function buildJsonTargets(spec: HttpSpec): MutableTarget[] {
           bodyJson: JSON.stringify({
             ...(parsed as Record<string, unknown>),
             [key]: nextValue,
+          }),
+        };
+      },
+      mutateOperator(operator: "ne" | "eq", operand: string) {
+        return {
+          ...spec,
+          bodyJson: JSON.stringify({
+            ...(parsed as Record<string, unknown>),
+            [key]: { [`$${operator}`]: operand },
+          }),
+        };
+      },
+      mutateWhere(script: string) {
+        return {
+          ...spec,
+          bodyJson: JSON.stringify({
+            ...(parsed as Record<string, unknown>),
+            $where: script,
           }),
         };
       },
@@ -471,6 +602,20 @@ function buildTimeProbe(value: string, dbms: Dbms): string | null {
   return null;
 }
 
+function buildTimeProbeSpec(target: MutableTarget, dbms: Dbms): HttpSpec | null {
+  if (dbms === "MongoDB") {
+    return target.mutateWhere?.(buildMongoWhereDelayProbe()) ?? null;
+  }
+
+  const payload = buildTimeProbe(target.originalValue, dbms);
+  return payload ? target.mutate(payload) : null;
+}
+
+function buildMongoWhereDelayProbe(): string {
+  const delayMs = TIME_DELAY_SECONDS * 1000;
+  return `function(){var t=Date.now();while(Date.now()-t<${delayMs}){};return true;}`;
+}
+
 function inferDbms(hints: ExposureScanHints): string[] {
   const text = [
     ...(hints.backendLanguages ?? []),
@@ -495,6 +640,9 @@ function inferDbms(hints: ExposureScanHints): string[] {
   if (/oracle|oracledb|oracle database|odp\.net|manageddataaccess|oci8|cx_oracle/.test(text)) {
     dbms.push("Oracle Database");
   }
+  if (/mongo|mongodb|mongoose|bson|objectid/.test(text)) {
+    dbms.push("MongoDB");
+  }
   if (/\.net|dotnet|asp\.net|c#|csharp|kestrel|iis/.test(text)) {
     dbms.push("Microsoft SQL Server", "Oracle Database");
   }
@@ -502,11 +650,13 @@ function inferDbms(hints: ExposureScanHints): string[] {
     dbms.push("SQLite");
   }
   if (/node|express|fastify|nestjs|next\.js|nextjs/.test(text)) {
-    dbms.push("PostgreSQL", "MySQL / MariaDB", "Microsoft SQL Server", "Oracle Database");
+    dbms.push("MongoDB", "PostgreSQL", "MySQL / MariaDB", "Microsoft SQL Server", "Oracle Database");
   }
 
   const unique = Array.from(new Set(dbms));
-  return unique.length ? unique : ["MySQL / MariaDB", "PostgreSQL", "Microsoft SQL Server", "Oracle Database"];
+  return unique.length
+    ? unique
+    : ["MySQL / MariaDB", "PostgreSQL", "Microsoft SQL Server", "Oracle Database", "MongoDB"];
 }
 
 function isSupportedTimeDbms(dbms: string): dbms is Dbms {
@@ -514,11 +664,12 @@ function isSupportedTimeDbms(dbms: string): dbms is Dbms {
     dbms === "MySQL / MariaDB" ||
     dbms === "PostgreSQL" ||
     dbms === "Microsoft SQL Server" ||
-    dbms === "Oracle Database"
+    dbms === "Oracle Database" ||
+    dbms === "MongoDB"
   );
 }
 
-function detectSqlError(text: string): { dbms: Dbms; detail: string; index: number } | null {
+function detectDatabaseError(text: string): { dbms: Dbms; detail: string; index: number } | null {
   for (const [dbms, pattern, detail] of SQL_ERROR_PATTERNS) {
     const match = pattern.exec(text);
     if (match?.index !== undefined) {

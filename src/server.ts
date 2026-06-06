@@ -209,7 +209,7 @@ app.post("/api/sql-injection-scans", async (req, res) => {
   const parsed = sqlInjectionScanSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({
-      error: "Yeu cau SQL injection scan khong hop le",
+      error: "Yeu cau SQL/NoSQL injection scan khong hop le",
       issues: parsed.error.issues,
     });
     return;
@@ -240,7 +240,7 @@ app.post("/api/sql-injection-scans", async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({
-      error: error instanceof Error ? error.message : "SQL injection scan failed",
+      error: error instanceof Error ? error.message : "SQL/NoSQL injection scan failed",
     });
   }
 });

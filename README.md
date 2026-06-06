@@ -119,7 +119,7 @@ curl -X POST http://103.12.77.207:4000/api/exposure-scans \
   -d '{"url":"https://example.com/api/login","hints":{"backendLanguages":["Node.js"],"webServer":"nginx","operatingSystem":"Linux/Unix likely"}}'
 ```
 
-Safe SQL injection checks:
+Safe SQL/NoSQL injection checks:
 
 ```bash
 curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
@@ -133,6 +133,14 @@ curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
 curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com/login","method":"POST","bodyType":"form","bodyForm":"login=test\npass=test123","scenario":"time","hints":{"backendLanguages":["C# / ASP.NET"],"frameworks":["ASP.NET"],"databases":["Oracle Database"]}}'
+
+curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/api/login","method":"POST","bodyType":"json","bodyJson":"{\"username\":\"test\",\"password\":\"test123\"}","scenario":"inband","hints":{"backendLanguages":["Node.js"],"databases":["MongoDB"]}}'
+
+curl -X POST http://103.12.77.207:4000/api/sql-injection-scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/api/login","method":"POST","bodyType":"json","bodyJson":"{\"username\":\"test\",\"password\":\"test123\"}","scenario":"time","hints":{"backendLanguages":["Node.js"],"databases":["MongoDB"]}}'
 ```
 
 ## Scanner Notes

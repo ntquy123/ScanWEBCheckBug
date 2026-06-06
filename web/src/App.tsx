@@ -420,12 +420,12 @@ export default function App() {
 
       const payload = (await response.json()) as SqlInjectionScanResult & { error?: string };
       if (!response.ok) {
-        throw new Error(payload.error ?? "Khong scan duoc SQL injection");
+        throw new Error(payload.error ?? "Khong scan duoc SQL/NoSQL injection");
       }
 
       setSqliResult(payload);
     } catch (scanError) {
-      setSqliError(scanError instanceof Error ? scanError.message : "SQL injection scan failed");
+      setSqliError(scanError instanceof Error ? scanError.message : "SQL/NoSQL injection scan failed");
     } finally {
       setActiveSqliScenario(null);
     }
@@ -629,7 +629,7 @@ export default function App() {
         {result ? (
           <section className="sqli-action">
             <div>
-              <h2>SQL injection check</h2>
+              <h2>SQL/NoSQL injection check</h2>
             </div>
             <div className="sqli-buttons">
               <button
@@ -901,7 +901,7 @@ function SqlInjectionPanel({ result }: { result: SqlInjectionScanResult }) {
     <section className="sqli-panel">
       <div className="panel-title">
         <Bug size={20} aria-hidden="true" />
-        <h2>SQL injection result</h2>
+        <h2>SQL/NoSQL injection result</h2>
       </div>
 
       <div className="exposure-summary">
@@ -913,7 +913,7 @@ function SqlInjectionPanel({ result }: { result: SqlInjectionScanResult }) {
       </div>
 
       {result.findings.length === 0 ? (
-        <p className="empty-state">No SQL injection signal was confirmed by this scenario.</p>
+        <p className="empty-state">No SQL/NoSQL injection signal was confirmed by this scenario.</p>
       ) : (
         <div className="finding-list">
           {result.findings.map((finding) => (
