@@ -400,6 +400,7 @@ def analyze(fetch: FetchResult, start: float, scan_request: ScanRequest) -> Dict
 
     analyze_headers(headers, candidates, findings)
     analyze_cookies(set_cookies, candidates)
+    analyze_url_signals(fetch.input_url, fetch.final_url, scan_request, candidates, findings)
     analyze_html(html, parser, candidates)
     analyze_database_leaks(html, headers, candidates, findings)
     analyze_stack_traces(html, headers, candidates, findings)
@@ -587,6 +588,10 @@ def analyze_cookies(cookies: Iterable[str], candidates: Dict[Tuple[str, str], Ca
 
     cookie_patterns = [
         ("phpsessid", "backend_language", "PHP", 0.82, "PHP session cookie"),
+        ("wordpress_", "framework", "WordPress", 0.88, "WordPress cookie"),
+        ("wordpress_", "backend_language", "PHP", 0.72, "WordPress commonly runs on PHP"),
+        ("wp-settings", "framework", "WordPress", 0.82, "WordPress settings cookie"),
+        ("wp-settings", "backend_language", "PHP", 0.66, "WordPress commonly runs on PHP"),
         ("laravel_session", "framework", "Laravel", 0.85, "Laravel session cookie"),
         ("laravel_session", "backend_language", "PHP", 0.72, "Laravel is a PHP framework"),
         ("asp.net_sessionid", "backend_language", "C# / ASP.NET", 0.86, "ASP.NET session cookie"),
@@ -606,6 +611,87 @@ def analyze_cookies(cookies: Iterable[str], candidates: Dict[Tuple[str, str], Ca
     for needle, category, name, weight, detail in cookie_patterns:
         if needle in lower:
             add_candidate(candidates, category, name, weight, "cookie", detail, first_matching_cookie(cookie_text, needle))
+
+
+def analyze_url_signals(
+    input_url: str,
+    final_url: str,
+    scan_request: ScanRequest,
+    candidates: Dict[Tuple[str, str], Candidate],
+    findings: List[Dict[str, object]],
+) -> None:
+    urls = [input_url, final_url]
+    paths = []
+    for url in urls:
+        try:
+            paths.append(urlparse(url).path)
+        except ValueError:
+            continue
+
+    path_text = " ".join(paths).lower()
+    evidence_path = next((path for path in paths if path), None)
+
+    if ".php" in path_text:
+        add_candidate(
+            candidates,
+            "backend_language",
+            "PHP",
+            0.74,
+            "url:path",
+            "PHP file extension exposed in target URL",
+            evidence_path,
+        )
+
+    wordpress_path_markers = [
+        "/wp-admin/",
+        "/wp-admin/admin-ajax.php",
+        "/wp-login.php",
+        "/wp-content/",
+        "/wp-includes/",
+    ]
+    if any(marker in path_text for marker in wordpress_path_markers):
+        add_wordpress_candidates(candidates, "url:path", "WordPress path exposed in target URL", evidence_path, 0.92)
+
+    if scan_request.method == "POST" and scan_request.body_type == "form" and scan_request.body_form:
+        for key, value in parse_form_text(scan_request.body_form):
+            if key.lower() == "action" and value.lower().startswith("wp_"):
+                add_wordpress_candidates(
+                    candidates,
+                    "request:form",
+                    "WordPress AJAX action pattern in submitted form data",
+                    f"{key}={value}",
+                    0.74,
+                )
+                add_finding(
+                    findings,
+                    "WordPress AJAX endpoint detected",
+                    "info",
+                    0.58,
+                    "request:form",
+                    "Submitted form action uses the WordPress AJAX naming pattern",
+                    f"{key}={value}",
+                )
+                break
+
+
+def add_wordpress_candidates(
+    candidates: Dict[Tuple[str, str], Candidate],
+    source: str,
+    detail: str,
+    value: Optional[str],
+    framework_weight: float,
+) -> None:
+    add_candidate(candidates, "framework", "WordPress", framework_weight, source, detail, value)
+    add_candidate(candidates, "backend_language", "PHP", min(0.82, framework_weight), source, "WordPress commonly runs on PHP", value)
+    add_candidate(
+        candidates,
+        "database",
+        "MySQL / MariaDB",
+        min(0.52, framework_weight * 0.58),
+        source,
+        "WordPress commonly uses MySQL or MariaDB; this is an inferred database signal",
+        value,
+    )
 
 
 def analyze_html(html: str, parser: SignalParser, candidates: Dict[Tuple[str, str], Candidate]) -> None:
