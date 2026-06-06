@@ -111,6 +111,14 @@ curl -X POST http://103.12.77.207:4000/api/exposure-scans \
   -d '{"url":"https://example.com/wp-admin/admin-ajax.php","hints":{"backendLanguages":["PHP"],"frameworks":["WordPress"],"webServer":"nginx","operatingSystem":"Linux/Unix likely"}}'
 ```
 
+Node.js exposure profile:
+
+```bash
+curl -X POST http://103.12.77.207:4000/api/exposure-scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/api/login","hints":{"backendLanguages":["Node.js"],"webServer":"nginx","operatingSystem":"Linux/Unix likely"}}'
+```
+
 ## Scanner Notes
 
 The scanner infers backend language and database from public signals only:

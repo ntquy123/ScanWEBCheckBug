@@ -89,6 +89,7 @@ export type ExposureCategory =
   | "secret"
   | "docker"
   | "vcs"
+  | "node"
   | "php"
   | "wordpress"
   | "backup"

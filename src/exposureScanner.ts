@@ -20,10 +20,10 @@ interface ExposureCase {
 
 type BinarySignature = "zip" | "gzip" | "7z" | "tar";
 
-const MAX_CASES = 180;
+const MAX_CASES = 360;
 const MAX_BYTES = 4096;
-const REQUEST_TIMEOUT_MS = 2500;
-const CONCURRENCY = 12;
+const REQUEST_TIMEOUT_MS = 2000;
+const CONCURRENCY = 16;
 const USER_AGENT = "ScanWEBCheckBug/1.2 exposure-check";
 
 const ENV_SIGNATURES = [
@@ -39,6 +39,37 @@ const SECRET_SIGNATURES = [
 const DOCKER_SIGNATURES = [
   /^(?:FROM|ARG|ENV|RUN|COPY|ADD|WORKDIR|CMD|ENTRYPOINT|EXPOSE)\b/im,
   /(?:^|\n)\s*(?:services|version|image|container_name|volumes|networks):/i,
+];
+
+const NODE_PACKAGE_SIGNATURES = [
+  /"name"\s*:\s*"[^"]+"/i,
+  /"(?:dependencies|devDependencies|scripts|engines|packageManager)"\s*:/i,
+  /(?:package-lock|lockfileVersion|pnpm-lock|yarn lockfile|bun-lockfile)/i,
+];
+
+const NODE_CONFIG_SIGNATURES = [
+  /\b(?:module\.exports|exports\.default|export default|require\(|import\s+.+\s+from)\b/i,
+  /\b(?:process\.env|dotenv|express|koa|fastify|nestjs|next|nuxt|vite|webpack|pm2|nodemon)\b/i,
+  /"(?:host|port|database|username|password|dialect|uri|url|secret|jwtSecret|mongo|redis)"\s*:/i,
+];
+
+const NODE_SOURCE_SIGNATURES = [
+  /\b(?:require\(["']express["']\)|from ["']express["']|express\(\)|fastify\(|new Koa\(|NestFactory|createServer\(|app\.listen|server\.listen)\b/i,
+  /\b(?:process\.env|module\.exports|exports\.|import\s+.+\s+from|require\()\b/i,
+];
+
+const NODE_ORM_SIGNATURES = [
+  /\b(?:datasource|generator|provider\s*=|model\s+\w+|DATABASE_URL|PrismaClient)\b/i,
+  /\b(?:sequelize|mongoose|typeorm|knex|mongodb|postgres|mysql|mariadb|sqlite|redis)\b/i,
+  /"(?:type|dialect|database|username|password|host|port|url|uri)"\s*:/i,
+  /^SQLite format 3/i,
+];
+
+const NODE_SOURCEMAP_SIGNATURES = [
+  /"version"\s*:\s*3/i,
+  /"sources"\s*:\s*\[/i,
+  /"sourcesContent"\s*:\s*\[/i,
+  /\/\/# sourceMappingURL=/i,
 ];
 
 const PHP_SIGNATURES = [
@@ -60,7 +91,7 @@ const VCS_SIGNATURES = [
 
 const BACKUP_SIGNATURES = [
   /(?:-- MySQL dump|CREATE TABLE|INSERT INTO|PostgreSQL database dump|MariaDB dump)/i,
-  /(?:<\?php|DB_PASSWORD|DATABASE_URL|wp-config|composer\.json)/i,
+  /(?:<\?php|DB_PASSWORD|DATABASE_URL|wp-config|composer\.json|package\.json|node_modules)/i,
 ];
 
 const SERVER_SIGNATURES = [
@@ -157,6 +188,10 @@ function buildExposureCases(hints: ExposureScanHints, baseUrl: string): Exposure
     cases.push(...phpCases());
   }
 
+  if (hasNodeHint(hints)) {
+    cases.push(...nodeCases());
+  }
+
   if (hasHint(hints, "wordpress")) {
     cases.push(...wordpressCases());
   }
@@ -170,6 +205,24 @@ function buildExposureCases(hints: ExposureScanHints, baseUrl: string): Exposure
   cases.push(...logCases(), ...directoryCases());
 
   return dedupeCases(cases);
+}
+
+function hasNodeHint(hints: ExposureScanHints): boolean {
+  return [
+    "node",
+    "node.js",
+    "nodejs",
+    "express",
+    "fastify",
+    "koa",
+    "nestjs",
+    "nest.js",
+    "next.js",
+    "nextjs",
+    "nuxt",
+    "javascript",
+    "typescript",
+  ].some((needle) => hasHint(hints, needle));
 }
 
 function hasHint(hints: ExposureScanHints, needle: string): boolean {
@@ -301,6 +354,296 @@ function vcsCases(): ExposureCase[] {
     signatures: VCS_SIGNATURES,
     requireSignature: path !== "/.gitignore",
   }));
+}
+
+function nodeCases(): ExposureCase[] {
+  const packageRoots = ["", "/app", "/api", "/backend", "/server", "/service", "/node", "/client", "/web"];
+  const packageFiles = [
+    "package.json",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lockb",
+    "rush.json",
+    "lerna.json",
+    "nx.json",
+    "turbo.json",
+    ".npmrc",
+    ".yarnrc",
+    ".yarnrc.yml",
+    ".nvmrc",
+    ".node-version",
+  ];
+
+  const configRoots = ["", "/config", "/configs", "/src/config", "/app/config", "/server/config", "/api/config", "/backend/config"];
+  const configFiles = [
+    "default.json",
+    "production.json",
+    "prod.json",
+    "development.json",
+    "dev.json",
+    "staging.json",
+    "stage.json",
+    "test.json",
+    "local.json",
+    "database.json",
+    "db.json",
+    "mongo.json",
+    "mongodb.json",
+    "redis.json",
+    "mail.json",
+    "auth.json",
+    "jwt.json",
+    "secrets.json",
+    "secret.json",
+    "config.json",
+    "config.js",
+    "config.cjs",
+    "config.mjs",
+    "database.js",
+    "db.js",
+    "redis.js",
+    "mongo.js",
+    "mongodb.js",
+    "secrets.js",
+    "secret.js",
+  ];
+
+  const sourcePaths = [
+    "/server.js",
+    "/server.cjs",
+    "/server.mjs",
+    "/server.ts",
+    "/app.js",
+    "/app.cjs",
+    "/app.mjs",
+    "/app.ts",
+    "/index.js",
+    "/index.cjs",
+    "/index.mjs",
+    "/index.ts",
+    "/main.js",
+    "/main.ts",
+    "/src/server.js",
+    "/src/server.ts",
+    "/src/app.js",
+    "/src/app.ts",
+    "/src/index.js",
+    "/src/index.ts",
+    "/src/main.js",
+    "/src/main.ts",
+    "/dist/server.js",
+    "/dist/app.js",
+    "/dist/index.js",
+    "/dist/main.js",
+    "/build/server.js",
+    "/build/app.js",
+    "/build/index.js",
+    "/build/main.js",
+    "/server/index.js",
+    "/server/app.js",
+    "/server/main.js",
+    "/api/server.js",
+    "/api/app.js",
+    "/backend/server.js",
+    "/backend/app.js",
+  ];
+
+  const frameworkPaths = [
+    "/next.config.js",
+    "/next.config.mjs",
+    "/next.config.ts",
+    "/nuxt.config.js",
+    "/nuxt.config.ts",
+    "/nest-cli.json",
+    "/nestconfig.json",
+    "/vite.config.js",
+    "/vite.config.ts",
+    "/webpack.config.js",
+    "/webpack.prod.js",
+    "/webpack.dev.js",
+    "/rollup.config.js",
+    "/babel.config.js",
+    "/tsconfig.json",
+    "/tsconfig.build.json",
+    "/jsconfig.json",
+    "/nodemon.json",
+    "/ecosystem.config.js",
+    "/ecosystem.config.cjs",
+    "/pm2.config.js",
+    "/process.json",
+    "/forever.json",
+    "/.pm2/dump.pm2",
+    "/.pm2/module_conf.json",
+  ];
+
+  const ormPaths = [
+    "/prisma/schema.prisma",
+    "/prisma/dev.db",
+    "/prisma/prod.db",
+    "/prisma/database.db",
+    "/prisma/migrations/migration_lock.toml",
+    "/schema.prisma",
+    "/ormconfig.json",
+    "/ormconfig.js",
+    "/ormconfig.ts",
+    "/typeorm.config.js",
+    "/typeorm.config.ts",
+    "/sequelize.config.js",
+    "/sequelize.config.json",
+    "/knexfile.js",
+    "/knexfile.ts",
+    "/database.sqlite",
+    "/database.sqlite3",
+    "/db.sqlite",
+    "/db.sqlite3",
+    "/dev.db",
+    "/data.db",
+    "/data/database.sqlite",
+    "/storage/database.sqlite",
+  ];
+
+  const nextNuxtPaths = [
+    "/.next/BUILD_ID",
+    "/.next/routes-manifest.json",
+    "/.next/build-manifest.json",
+    "/.next/prerender-manifest.json",
+    "/.next/react-loadable-manifest.json",
+    "/.next/server/pages-manifest.json",
+    "/.next/server/app-paths-manifest.json",
+    "/.next/server/middleware-manifest.json",
+    "/.next/server/required-server-files.json",
+    "/.next/server/next-font-manifest.json",
+    "/.next/server/server-reference-manifest.json",
+    "/.nuxt/nitro.json",
+    "/.nuxt/dist/server/server.mjs",
+    "/.nuxt/dist/server/client.manifest.mjs",
+    "/.output/nitro.json",
+    "/.output/server/index.mjs",
+    "/.output/server/chunks/app/server.mjs",
+    "/.output/public/_nuxt/builds/meta.json",
+  ];
+
+  const sourceMapPaths = [
+    "/server.js.map",
+    "/app.js.map",
+    "/index.js.map",
+    "/main.js.map",
+    "/bundle.js.map",
+    "/vendor.js.map",
+    "/runtime.js.map",
+    "/dist/server.js.map",
+    "/dist/app.js.map",
+    "/dist/index.js.map",
+    "/dist/main.js.map",
+    "/build/server.js.map",
+    "/build/app.js.map",
+    "/build/index.js.map",
+    "/build/main.js.map",
+    "/public/js/app.js.map",
+    "/public/js/main.js.map",
+    "/static/js/main.js.map",
+    "/static/js/bundle.js.map",
+    "/assets/main.js.map",
+    "/assets/index.js.map",
+    "/_next/static/chunks/main.js.map",
+    "/_next/static/chunks/webpack.js.map",
+    "/_next/static/chunks/framework.js.map",
+    "/_nuxt/app.js.map",
+    "/_nuxt/entry.js.map",
+  ];
+
+  const nodeModulesPaths = [
+    "/node_modules/.package-lock.json",
+    "/node_modules/express/package.json",
+    "/node_modules/fastify/package.json",
+    "/node_modules/koa/package.json",
+    "/node_modules/@nestjs/core/package.json",
+    "/node_modules/next/package.json",
+    "/node_modules/nuxt/package.json",
+    "/node_modules/@prisma/client/package.json",
+    "/node_modules/prisma/package.json",
+    "/node_modules/mongoose/package.json",
+    "/node_modules/sequelize/package.json",
+    "/node_modules/typeorm/package.json",
+    "/node_modules/pg/package.json",
+    "/node_modules/mysql2/package.json",
+    "/node_modules/redis/package.json",
+    "/node_modules/ioredis/package.json",
+    "/node_modules/jsonwebtoken/package.json",
+    "/node_modules/bcrypt/package.json",
+    "/node_modules/dotenv/package.json",
+  ];
+
+  const logPaths = [
+    "/npm-debug.log",
+    "/yarn-error.log",
+    "/pnpm-debug.log",
+    "/node.log",
+    "/server.log",
+    "/pm2.log",
+    "/logs/node.log",
+    "/logs/server.log",
+    "/logs/app.log",
+    "/logs/api.log",
+    "/logs/worker.log",
+    "/logs/pm2.log",
+    "/.pm2/logs/app-error.log",
+    "/.pm2/logs/app-out.log",
+    "/.pm2/logs/server-error.log",
+    "/.pm2/logs/server-out.log",
+  ];
+
+  return [
+    ...pathsInDirs(packageRoots, packageFiles).map((path) =>
+      nodeCase(path, "low", "Node package or lock file may reveal dependencies and runtime scripts", NODE_PACKAGE_SIGNATURES),
+    ),
+    ...pathsInDirs(configRoots, configFiles).map((path) =>
+      nodeCase(path, nodeConfigSeverity(path), "Node configuration file may expose runtime settings or secrets", [
+        ...NODE_CONFIG_SIGNATURES,
+        ...SECRET_SIGNATURES,
+        ...ENV_SIGNATURES,
+      ]),
+    ),
+    ...sourcePaths.map((path) =>
+      nodeCase(path, "medium", "Node server source file appears publicly readable", [
+        ...NODE_SOURCE_SIGNATURES,
+        ...NODE_CONFIG_SIGNATURES,
+      ]),
+    ),
+    ...frameworkPaths.map((path) =>
+      nodeCase(path, "low", "Node build or process configuration appears publicly readable", NODE_CONFIG_SIGNATURES),
+    ),
+    ...ormPaths.map((path) =>
+      nodeCase(path, nodeDataSeverity(path), "Node ORM or local database file appears publicly readable", [
+        ...NODE_ORM_SIGNATURES,
+        ...SECRET_SIGNATURES,
+        ...ENV_SIGNATURES,
+      ], nodeBinarySignatures(path)),
+    ),
+    ...nextNuxtPaths.map((path) =>
+      nodeCase(path, "medium", "Next.js or Nuxt server build artifact appears publicly readable", [
+        ...NODE_CONFIG_SIGNATURES,
+        ...NODE_PACKAGE_SIGNATURES,
+      ]),
+    ),
+    ...sourceMapPaths.map((path) =>
+      nodeCase(path, "medium", "JavaScript source map may expose original source code", NODE_SOURCEMAP_SIGNATURES),
+    ),
+    ...nodeModulesPaths.map((path) =>
+      nodeCase(path, "medium", "Public node_modules dependency metadata suggests server files may be exposed", [
+        ...NODE_PACKAGE_SIGNATURES,
+        /node_modules/i,
+      ]),
+    ),
+    ...logPaths.map((path) =>
+      nodeCase(path, "medium", "Node application log appears publicly readable", [
+        ...LOG_SIGNATURES,
+        /\b(?:node|npm|yarn|pm2|express|fastify|nestjs|UnhandledPromiseRejection|Error:|TypeError:)\b/i,
+      ]),
+    ),
+  ];
 }
 
 function phpCases(): ExposureCase[] {
@@ -536,6 +879,59 @@ function normalizeCasePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+function pathsInDirs(dirs: string[], files: string[]): string[] {
+  const paths: string[] = [];
+  for (const dir of dirs) {
+    const prefix = dir ? normalizeCasePath(dir).replace(/\/$/, "") : "";
+    for (const file of files) {
+      paths.push(`${prefix}/${file}`.replace(/\/{2,}/g, "/"));
+    }
+  }
+  return paths;
+}
+
+function nodeCase(
+  path: string,
+  severity: FindingSeverity,
+  description: string,
+  signatures: RegExp[],
+  binarySignatures?: BinarySignature[],
+): ExposureCase {
+  return {
+    path,
+    category: "node",
+    severity,
+    description,
+    signatures,
+    ...(binarySignatures ? { binarySignatures } : {}),
+    requireSignature: true,
+  };
+}
+
+function nodeConfigSeverity(path: string): FindingSeverity {
+  if (/(secret|secrets|auth|jwt|database|db|mongo|redis|local|production|prod)/i.test(path)) {
+    return "high";
+  }
+  return "medium";
+}
+
+function nodeDataSeverity(path: string): FindingSeverity {
+  if (/\.(?:db|sqlite|sqlite3)$/i.test(path)) {
+    return "high";
+  }
+  if (/schema\.prisma|ormconfig|sequelize|knex|typeorm/i.test(path)) {
+    return "medium";
+  }
+  return "low";
+}
+
+function nodeBinarySignatures(path: string): BinarySignature[] | undefined {
+  if (/\.(?:zip|gz|tgz|7z|tar)$/i.test(path)) {
+    return ["zip", "gzip", "7z", "tar"];
+  }
+  return undefined;
+}
+
 function phpSeverity(path: string): FindingSeverity {
   if (path.includes("config") || path.includes("db") || path.includes("connection") || path.includes("auth")) {
     return "high";
@@ -741,7 +1137,7 @@ function redactSnippet(text: string): string {
     .slice(0, 8)
     .join("\n")
     .replace(
-      /((?:SECRET|TOKEN|PASSWORD|PASS|PWD|KEY|DATABASE_URL|DB_PASSWORD|PRIVATE_KEY|ACCESS_KEY)[A-Z0-9_ -]*\s*[:=]\s*)(["']?)[^\r\n"']+/gi,
+      /((?:SECRET|TOKEN|PASSWORD|PASS|PWD|KEY|DATABASE_URL|DB_PASSWORD|PRIVATE_KEY|ACCESS_KEY|MONGODB_URI|MONGO_URI|REDIS_URL|JWT_SECRET|SESSION_SECRET|COOKIE_SECRET)[A-Z0-9_ -]*\s*[:=]\s*)(["']?)[^\r\n"']+/gi,
       "$1$2[redacted]",
     )
     .replace(
