@@ -115,11 +115,11 @@ class SignalParser(HTMLParser):
         return " ".join(part for part in self.title_parts if part).strip()
 
 
-def emit_progress(percent: int, stage: str, message: str) -> None:
+def emit_progress(percent: int, stage: str, message: str, status: str = "running") -> None:
     event = {
         "type": "progress",
         "progress": {
-            "status": "running",
+            "status": status,
             "stage": stage,
             "percent": percent,
             "message": message,
@@ -150,7 +150,7 @@ def main() -> int:
         emit_progress(60, "fingerprint", "Analyzing public fingerprints")
         result = analyze(fetch, start)
 
-        emit_progress(100, "completed", "Fingerprint complete")
+        emit_progress(100, "completed", "Fingerprint complete", "completed")
         emit_result(result)
         return 0
     except Exception as exc:
