@@ -74,16 +74,13 @@ fi
 
 run git pull --ff-only origin "$CURRENT_BRANCH"
 
-if [ ! -f ".env" ] && [ -f ".env.example" ]; then
-  log "Chua co .env, tao tu .env.example"
-  cp .env.example .env
+if [ ! -f ".env" ]; then
+  fail "Khong tim thay .env. File .env phai nam trong repo va duoc deploy cung source code."
 fi
 
-if [ -f ".env" ]; then
-  set -a
-  . ./.env
-  set +a
-fi
+set -a
+. ./.env
+set +a
 
 BRANCH="${BRANCH_INPUT:-${BRANCH:-}}"
 PULL_IMAGES="${PULL_IMAGES_INPUT:-${PULL_IMAGES:-false}}"

@@ -61,7 +61,7 @@ services:
       context: .
       dockerfile: Dockerfile.web
       args:
-        VITE_API_BASE_URL: ${API_PUBLIC_URL:-http://localhost:4000}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:4000}
     ports:
       - "${WEB_PORT:-5173}:80"
     depends_on:

@@ -46,12 +46,15 @@ Postgres and Redis are internal Docker services by default. They are not exposed
 on the host server, so existing services on host ports `5432` or `6379` will not
 conflict.
 
+This project intentionally uses one tracked `.env` file for deployment config.
+Update `.env`, commit it, then deploy.
+
 To run the web on a different server port, edit `.env`:
 
 ```bash
 WEB_PORT=8081
 API_PORT=4000
-API_PUBLIC_URL=http://YOUR_SERVER_IP:4000
+VITE_API_BASE_URL=http://YOUR_SERVER_IP:4000
 CORS_ORIGIN=http://YOUR_SERVER_IP:8081
 ```
 
