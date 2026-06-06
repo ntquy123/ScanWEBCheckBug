@@ -28,11 +28,13 @@ const scanRequestSchema = z
   .object({
     url: z.string().trim().min(3).max(2048),
     method: z.enum(["GET", "POST"]).default("GET"),
+    bodyType: z.enum(["json", "form"]).default("json"),
     bodyJson: z.string().max(32768).optional(),
+    bodyForm: z.string().max(32768).optional(),
     checkSqlInjection: z.boolean().default(true),
   })
   .superRefine((data, ctx) => {
-    if (data.method === "POST" && data.bodyJson?.trim()) {
+    if (data.method === "POST" && data.bodyType === "json" && data.bodyJson?.trim()) {
       try {
         JSON.parse(data.bodyJson);
       } catch {
@@ -42,6 +44,14 @@ const scanRequestSchema = z
           message: "Body JSON khong hop le",
         });
       }
+    }
+
+    if (data.method === "POST" && data.bodyType === "form" && !data.bodyForm?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["bodyForm"],
+        message: "Form Data khong duoc de trong",
+      });
     }
   });
 
@@ -77,8 +87,12 @@ app.post("/api/scans", async (req, res) => {
   const job = await scanQueue.add("fingerprint", {
     url: normalizedUrl,
     method: parsed.data.method,
-    ...(parsed.data.method === "POST" && parsed.data.bodyJson?.trim()
+    ...(parsed.data.method === "POST" ? { bodyType: parsed.data.bodyType } : {}),
+    ...(parsed.data.method === "POST" && parsed.data.bodyType === "json" && parsed.data.bodyJson?.trim()
       ? { bodyJson: parsed.data.bodyJson.trim() }
+      : {}),
+    ...(parsed.data.method === "POST" && parsed.data.bodyType === "form" && parsed.data.bodyForm?.trim()
+      ? { bodyForm: parsed.data.bodyForm.trim() }
       : {}),
     checkSqlInjection: parsed.data.checkSqlInjection,
     requestedAt: new Date().toISOString(),

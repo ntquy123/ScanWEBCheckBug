@@ -3,11 +3,14 @@ export type ScanStatus = "queued" | "running" | "completed" | "failed";
 export type CandidateCategory = "backend_language" | "framework" | "database";
 
 export type ScanMethod = "GET" | "POST";
+export type ScanBodyType = "json" | "form";
 
 export interface ScanJobData {
   url: string;
   method: ScanMethod;
+  bodyType?: ScanBodyType;
   bodyJson?: string;
+  bodyForm?: string;
   checkSqlInjection: boolean;
   requestedAt: string;
 }
@@ -29,6 +32,7 @@ export interface ScanHttpInfo {
   inputUrl: string;
   finalUrl: string;
   method: ScanMethod;
+  bodyType?: ScanBodyType;
   statusCode: number;
   title?: string;
   server?: string;

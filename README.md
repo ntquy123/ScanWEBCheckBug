@@ -95,6 +95,14 @@ Check a job:
 curl http://103.12.77.207:4000/api/scans/<JOB_ID>
 ```
 
+POST scan with Form Data:
+
+```bash
+curl -X POST http://103.12.77.207:4000/api/scans \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/login","method":"POST","bodyType":"form","bodyForm":"action=wp_manga_signin\nlogin=test@example.com\npass=test123\nrememberme=forever\nnonce=replace_with_nonce","checkSqlInjection":true}'
+```
+
 ## Scanner Notes
 
 The scanner infers backend language and database from public signals only:

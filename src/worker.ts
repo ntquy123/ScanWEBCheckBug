@@ -55,7 +55,9 @@ async function runPythonScanner(job: Job<ScanJobData, ScanResult>): Promise<Scan
       JSON.stringify({
         url: job.data.url,
         method: job.data.method,
+        ...(job.data.bodyType ? { bodyType: job.data.bodyType } : {}),
         ...(job.data.bodyJson ? { bodyJson: job.data.bodyJson } : {}),
+        ...(job.data.bodyForm ? { bodyForm: job.data.bodyForm } : {}),
         checkSqlInjection: job.data.checkSqlInjection,
       }),
     );

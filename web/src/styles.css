@@ -141,7 +141,8 @@ textarea {
   flex-wrap: wrap;
 }
 
-.method-toggle {
+.method-toggle,
+.body-type-toggle {
   display: inline-grid;
   grid-template-columns: repeat(2, 72px);
   min-height: 36px;
@@ -151,7 +152,8 @@ textarea {
   border-radius: 6px;
 }
 
-.method-toggle button {
+.method-toggle button,
+.body-type-toggle button {
   color: #425466;
   background: transparent;
   border: 0;
@@ -161,7 +163,8 @@ textarea {
   font-weight: 800;
 }
 
-.method-toggle button.active {
+.method-toggle button.active,
+.body-type-toggle button.active {
   color: #ffffff;
   background: #1f7a6f;
 }
@@ -185,6 +188,14 @@ textarea {
 .body-editor {
   display: grid;
   gap: 8px;
+}
+
+.body-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .body-editor label {

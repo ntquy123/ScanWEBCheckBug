@@ -110,7 +110,9 @@ STACK_PATTERNS = [
 class ScanRequest:
     url: str
     method: str = "GET"
+    body_type: str = "json"
     body_json: Optional[str] = None
+    body_form: Optional[str] = None
     check_sql_injection: bool = True
 
 
@@ -255,23 +257,36 @@ def read_scan_request() -> ScanRequest:
 
     url = str(payload.get("url", "")).strip()
     method = str(payload.get("method", "GET")).upper()
+    body_type = str(payload.get("bodyType") or payload.get("body_type") or "json").lower()
     body_json = payload.get("bodyJson") or payload.get("body_json")
+    body_form = payload.get("bodyForm") or payload.get("body_form")
     check_sql = bool(payload.get("checkSqlInjection", True))
 
     if method not in {"GET", "POST"}:
         raise ValueError("Only GET and POST methods are supported")
+    if body_type not in {"json", "form"}:
+        raise ValueError("Only json and form body types are supported")
 
-    if body_json is not None:
+    if method == "POST" and body_type == "json" and body_json is not None:
         body_json = str(body_json).strip()
         if body_json:
             json.loads(body_json)
         else:
             body_json = None
 
+    if method == "POST" and body_type == "form":
+        body_form = str(body_form or "").strip()
+        if not parse_form_text(body_form):
+            raise ValueError("Form Data must contain at least one key=value line")
+    else:
+        body_form = None
+
     return ScanRequest(
         url=url,
         method=method,
+        body_type=body_type,
         body_json=body_json,
+        body_form=body_form,
         check_sql_injection=check_sql,
     )
 
@@ -314,7 +329,9 @@ def fetch_url(scan_request: ScanRequest, timeout: int = SCAN_TIMEOUT_SECONDS) ->
     return fetch_http(
         scan_request.url,
         method=scan_request.method,
+        body_type=scan_request.body_type,
         body_json=scan_request.body_json,
+        body_form=scan_request.body_form,
         timeout=timeout,
     )
 
@@ -322,7 +339,9 @@ def fetch_url(scan_request: ScanRequest, timeout: int = SCAN_TIMEOUT_SECONDS) ->
 def fetch_http(
     input_url: str,
     method: str = "GET",
+    body_type: str = "json",
     body_json: Optional[str] = None,
+    body_form: Optional[str] = None,
     timeout: int = SCAN_TIMEOUT_SECONDS,
 ) -> FetchResult:
     headers = {
@@ -333,8 +352,12 @@ def fetch_http(
     data = None
 
     if method == "POST":
-        headers["Content-Type"] = "application/json"
-        data = (body_json or "{}").encode("utf-8")
+        if body_type == "form":
+            headers["Content-Type"] = "application/x-www-form-urlencoded"
+            data = urlencode(parse_form_text(body_form or ""), doseq=True).encode("utf-8")
+        else:
+            headers["Content-Type"] = "application/json"
+            data = (body_json or "{}").encode("utf-8")
 
     request = Request(input_url, headers=headers, data=data, method=method)
 
@@ -403,6 +426,7 @@ def analyze(fetch: FetchResult, start: float, scan_request: ScanRequest) -> Dict
         "inputUrl": fetch.input_url,
         "finalUrl": fetch.final_url,
         "method": fetch.method,
+        "bodyType": scan_request.body_type if scan_request.method == "POST" else None,
         "statusCode": fetch.status_code,
         "contentType": content_type or None,
         "server": headers.get("server"),
@@ -855,7 +879,7 @@ def build_sqli_probes(scan_request: ScanRequest) -> List[Tuple[str, ScanRequest]
             probes.append((f"query parameter '{key}'", ScanRequest(url=probe_url, method="GET", check_sql_injection=False)))
         return probes
 
-    if scan_request.method == "POST" and scan_request.body_json:
+    if scan_request.method == "POST" and scan_request.body_type == "json" and scan_request.body_json:
         try:
             body = json.loads(scan_request.body_json)
         except json.JSONDecodeError:
@@ -868,6 +892,7 @@ def build_sqli_probes(scan_request: ScanRequest) -> List[Tuple[str, ScanRequest]
                     ScanRequest(
                         url=scan_request.url,
                         method="POST",
+                        body_type="json",
                         body_json=json.dumps(mutated_body),
                         check_sql_injection=False,
                     ),
@@ -875,6 +900,24 @@ def build_sqli_probes(scan_request: ScanRequest) -> List[Tuple[str, ScanRequest]
             )
             if len(probes) >= MAX_SQLI_PROBES:
                 break
+
+    if scan_request.method == "POST" and scan_request.body_type == "form" and scan_request.body_form:
+        pairs = parse_form_text(scan_request.body_form)
+        for index, (key, value) in enumerate(pairs[:MAX_SQLI_PROBES]):
+            mutated = list(pairs)
+            mutated[index] = (key, mutate_scalar_for_sqli(value))
+            probes.append(
+                (
+                    f"form field '{key}'",
+                    ScanRequest(
+                        url=scan_request.url,
+                        method="POST",
+                        body_type="form",
+                        body_form=format_form_text(mutated),
+                        check_sql_injection=False,
+                    ),
+                )
+            )
 
     return probes
 
@@ -898,6 +941,35 @@ def is_scalar(value: Any) -> bool:
 
 def mutate_scalar_for_sqli(value: Any) -> str:
     return f"{'' if value is None else value}'"
+
+
+def parse_form_text(body_form: str) -> List[Tuple[str, str]]:
+    raw = body_form.strip()
+    if not raw:
+        return []
+
+    if "\n" not in raw and "=" in raw:
+        return [(key, value) for key, value in parse_qsl(raw, keep_blank_values=True) if key]
+
+    pairs: List[Tuple[str, str]] = []
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" in stripped:
+            key, value = stripped.split("=", 1)
+        elif re.search(r"\s+", stripped):
+            key, value = re.split(r"\s+", stripped, maxsplit=1)
+        else:
+            key, value = stripped, ""
+        key = key.strip()
+        if key:
+            pairs.append((key, value.strip()))
+    return pairs
+
+
+def format_form_text(pairs: List[Tuple[str, str]]) -> str:
+    return "\n".join(f"{key}={value}" for key, value in pairs)
 
 
 def detect_sql_error(text: str) -> Optional[Tuple[str, str, str]]:

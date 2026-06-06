@@ -20,6 +20,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000
 
 type ScanStatus = "queued" | "running" | "completed" | "failed";
 type ScanMethod = "GET" | "POST";
+type ScanBodyType = "json" | "form";
 
 interface Evidence {
   source: string;
@@ -41,6 +42,7 @@ interface ScanResult {
     inputUrl: string;
     finalUrl: string;
     method: ScanMethod;
+    bodyType?: ScanBodyType;
     statusCode: number;
     title?: string;
     server?: string;
@@ -99,7 +101,11 @@ const initialProgress: ScanProgress = {
 export default function App() {
   const [targetUrl, setTargetUrl] = useState("");
   const [method, setMethod] = useState<ScanMethod>("GET");
+  const [bodyType, setBodyType] = useState<ScanBodyType>("json");
   const [bodyJson, setBodyJson] = useState('{\n  "username": "test",\n  "password": "test"\n}');
+  const [bodyForm, setBodyForm] = useState(
+    "action=wp_manga_signin\nlogin=test@example.com\npass=test123\nrememberme=forever\nnonce=replace_with_nonce",
+  );
   const [checkSqlInjection, setCheckSqlInjection] = useState(true);
   const [jobId, setJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ScanProgress>(initialProgress);
@@ -177,13 +183,18 @@ export default function App() {
       return;
     }
 
-    if (method === "POST" && bodyJson.trim()) {
+    if (method === "POST" && bodyType === "json" && bodyJson.trim()) {
       try {
         JSON.parse(bodyJson);
       } catch {
         setError("Body JSON khong hop le");
         return;
       }
+    }
+
+    if (method === "POST" && bodyType === "form" && !bodyForm.trim()) {
+      setError("Form Data khong duoc de trong");
+      return;
     }
 
     setIsSubmitting(true);
@@ -205,8 +216,14 @@ export default function App() {
         body: JSON.stringify({
           url: nextUrl,
           method,
+          ...(method === "POST" ? { bodyType } : {}),
           checkSqlInjection,
-          ...(method === "POST" && bodyJson.trim() ? { bodyJson: bodyJson.trim() } : {}),
+          ...(method === "POST" && bodyType === "json" && bodyJson.trim()
+            ? { bodyJson: bodyJson.trim() }
+            : {}),
+          ...(method === "POST" && bodyType === "form" && bodyForm.trim()
+            ? { bodyForm: bodyForm.trim() }
+            : {}),
         }),
       });
 
@@ -327,13 +344,42 @@ export default function App() {
             </div>
             {method === "POST" ? (
               <div className="body-editor">
-                <label htmlFor="body-json">Body JSON</label>
-                <textarea
-                  id="body-json"
-                  value={bodyJson}
-                  onChange={(event) => setBodyJson(event.target.value)}
-                  spellCheck={false}
-                />
+                <div className="body-editor-head">
+                  <label htmlFor={bodyType === "json" ? "body-json" : "body-form"}>
+                    {bodyType === "json" ? "Body JSON" : "Form Data"}
+                  </label>
+                  <div className="body-type-toggle" aria-label="POST body type">
+                    <button
+                      type="button"
+                      className={bodyType === "json" ? "active" : ""}
+                      onClick={() => setBodyType("json")}
+                    >
+                      JSON
+                    </button>
+                    <button
+                      type="button"
+                      className={bodyType === "form" ? "active" : ""}
+                      onClick={() => setBodyType("form")}
+                    >
+                      Form
+                    </button>
+                  </div>
+                </div>
+                {bodyType === "json" ? (
+                  <textarea
+                    id="body-json"
+                    value={bodyJson}
+                    onChange={(event) => setBodyJson(event.target.value)}
+                    spellCheck={false}
+                  />
+                ) : (
+                  <textarea
+                    id="body-form"
+                    value={bodyForm}
+                    onChange={(event) => setBodyForm(event.target.value)}
+                    spellCheck={false}
+                  />
+                )}
               </div>
             ) : null}
           </form>
@@ -408,7 +454,10 @@ export default function App() {
             <dl>
               <div>
                 <dt>Method</dt>
-                <dd>{result.http.method ?? "-"}</dd>
+                <dd>
+                  {result.http.method ?? "-"}
+                  {result.http.bodyType ? ` / ${result.http.bodyType}` : ""}
+                </dd>
               </div>
               <div>
                 <dt>Final URL</dt>
