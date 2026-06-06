@@ -100,6 +100,30 @@ interface ExposureScanResult {
   notes: string[];
 }
 
+type SqlInjectionScenario = "inband" | "time";
+
+interface SqlInjectionFinding {
+  scenario: SqlInjectionScenario;
+  target: string;
+  dbms: string;
+  severity: "info" | "low" | "medium" | "high";
+  confidence: number;
+  description: string;
+  evidence: Evidence[];
+  recommendation?: string;
+}
+
+interface SqlInjectionScanResult {
+  scannedAt: string;
+  durationMs: number;
+  scenario: SqlInjectionScenario;
+  checkedCount: number;
+  foundCount: number;
+  inferredDbms: string[];
+  findings: SqlInjectionFinding[];
+  notes: string[];
+}
+
 interface ScanProgress {
   status: ScanStatus;
   stage: string;
@@ -135,10 +159,13 @@ export default function App() {
   const [progress, setProgress] = useState<ScanProgress>(initialProgress);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [exposureResult, setExposureResult] = useState<ExposureScanResult | null>(null);
+  const [sqliResult, setSqliResult] = useState<SqlInjectionScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exposureError, setExposureError] = useState<string | null>(null);
+  const [sqliError, setSqliError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isExposureScanning, setIsExposureScanning] = useState(false);
+  const [activeSqliScenario, setActiveSqliScenario] = useState<SqlInjectionScenario | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const activeJobRef = useRef<string | null>(null);
 
@@ -250,7 +277,9 @@ export default function App() {
     setError(null);
     setResult(null);
     setExposureResult(null);
+    setSqliResult(null);
     setExposureError(null);
+    setSqliError(null);
     setProgress({
       status: "queued",
       stage: "submit",
@@ -345,6 +374,60 @@ export default function App() {
       setExposureError(scanError instanceof Error ? scanError.message : "Exposure scan failed");
     } finally {
       setIsExposureScanning(false);
+    }
+  }
+
+  async function startSqlInjectionScan(scenario: SqlInjectionScenario) {
+    if (!result) {
+      return;
+    }
+
+    if (method === "POST" && bodyType === "json" && bodyJson.trim()) {
+      try {
+        JSON.parse(bodyJson);
+      } catch {
+        setSqliError("Body JSON khong hop le");
+        return;
+      }
+    }
+
+    setActiveSqliScenario(scenario);
+    setSqliError(null);
+    setSqliResult(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/sql-injection-scans`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: result.http.finalUrl || result.http.inputUrl,
+          method,
+          ...(method === "POST" ? { bodyType } : {}),
+          ...(method === "POST" && bodyType === "json" && bodyJson.trim() ? { bodyJson: bodyJson.trim() } : {}),
+          ...(method === "POST" && bodyType === "form" && bodyForm.trim() ? { bodyForm: bodyForm.trim() } : {}),
+          scenario,
+          hints: {
+            backendLanguages: result.backendLanguages.map((item) => item.name),
+            frameworks: result.frameworks.map((item) => item.name),
+            databases: result.databases.map((item) => item.name),
+            webServer: result.serverFingerprint.webServer,
+            operatingSystem: result.serverFingerprint.operatingSystem,
+          },
+        }),
+      });
+
+      const payload = (await response.json()) as SqlInjectionScanResult & { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Khong scan duoc SQL injection");
+      }
+
+      setSqliResult(payload);
+    } catch (scanError) {
+      setSqliError(scanError instanceof Error ? scanError.message : "SQL injection scan failed");
+    } finally {
+      setActiveSqliScenario(null);
     }
   }
 
@@ -542,6 +625,49 @@ export default function App() {
         </section>
 
         {result ? <FindingsPanel findings={result.securityFindings ?? []} /> : null}
+
+        {result ? (
+          <section className="sqli-action">
+            <div>
+              <h2>SQL injection check</h2>
+            </div>
+            <div className="sqli-buttons">
+              <button
+                type="button"
+                onClick={() => void startSqlInjectionScan("inband")}
+                disabled={Boolean(activeSqliScenario)}
+              >
+                {activeSqliScenario === "inband" ? (
+                  <LoaderCircle className="spin" size={18} aria-hidden="true" />
+                ) : (
+                  <Bug size={18} aria-hidden="true" />
+                )}
+                <span>In-band check</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void startSqlInjectionScan("time")}
+                disabled={Boolean(activeSqliScenario)}
+              >
+                {activeSqliScenario === "time" ? (
+                  <LoaderCircle className="spin" size={18} aria-hidden="true" />
+                ) : (
+                  <Activity size={18} aria-hidden="true" />
+                )}
+                <span>Time-based check</span>
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {sqliError ? (
+          <div className="error-line">
+            <AlertTriangle size={18} aria-hidden="true" />
+            <span>{sqliError}</span>
+          </div>
+        ) : null}
+
+        {sqliResult ? <SqlInjectionPanel result={sqliResult} /> : null}
 
         {result ? (
           <section className="exposure-action">
@@ -766,6 +892,59 @@ function ExposurePanel({ result }: { result: ExposureScanResult }) {
         </div>
       )}
 
+    </section>
+  );
+}
+
+function SqlInjectionPanel({ result }: { result: SqlInjectionScanResult }) {
+  return (
+    <section className="sqli-panel">
+      <div className="panel-title">
+        <Bug size={20} aria-hidden="true" />
+        <h2>SQL injection result</h2>
+      </div>
+
+      <div className="exposure-summary">
+        <span>Scenario: {result.scenario === "inband" ? "In-band" : "Time-based"}</span>
+        <span>Checked: {result.checkedCount}</span>
+        <span>Found: {result.foundCount}</span>
+        <span>DBMS: {result.inferredDbms.join(", ") || "Unknown"}</span>
+        <span>Duration: {result.durationMs}ms</span>
+      </div>
+
+      {result.findings.length === 0 ? (
+        <p className="empty-state">No SQL injection signal was confirmed by this scenario.</p>
+      ) : (
+        <div className="finding-list">
+          {result.findings.map((finding) => (
+            <article className="finding" key={`${finding.scenario}:${finding.target}:${finding.description}`}>
+              <div className="finding-head">
+                <strong>{finding.target}</strong>
+                <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+              </div>
+              <small>
+                {finding.dbms} / {formatConfidence(finding.confidence)}
+              </small>
+              <p className="finding-description">{finding.description}</p>
+              <ul>
+                {finding.evidence.map((item, index) => (
+                  <li key={`${item.source}:${index}`}>
+                    <span>{item.source}</span>
+                    <p>{item.detail}</p>
+                    {item.value ? <code>{item.value}</code> : null}
+                  </li>
+                ))}
+              </ul>
+              {finding.recommendation ? (
+                <p className="recommendation">
+                  <Code2 size={15} aria-hidden="true" />
+                  <span>{finding.recommendation}</span>
+                </p>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

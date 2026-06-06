@@ -8,7 +8,8 @@ import { z } from "zod";
 import { env, isOriginAllowed } from "./config.js";
 import { runExposureScan } from "./exposureScanner.js";
 import { createScanQueue, createScanQueueEvents } from "./queue.js";
-import type { ExposureScanHints, ScanProgress, ScanResult } from "./types.js";
+import { runSqlInjectionScan } from "./sqlInjectionScanner.js";
+import type { ExposureScanHints, ScanBodyType, ScanProgress, ScanResult, SqlInjectionScanRequest } from "./types.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -68,6 +69,38 @@ const exposureScanSchema = z.object({
     })
     .optional(),
 });
+
+const sqlInjectionScanSchema = z
+  .object({
+    url: z.string().trim().min(3).max(2048),
+    method: z.enum(["GET", "POST"]).default("GET"),
+    bodyType: z.enum(["json", "form"]).default("json"),
+    bodyJson: z.string().max(32768).optional(),
+    bodyForm: z.string().max(32768).optional(),
+    scenario: z.enum(["inband", "time"]),
+    hints: exposureScanSchema.shape.hints,
+  })
+  .superRefine((data, ctx) => {
+    if (data.method === "POST" && data.bodyType === "json" && data.bodyJson?.trim()) {
+      try {
+        JSON.parse(data.bodyJson);
+      } catch {
+        ctx.addIssue({
+          code: "custom",
+          path: ["bodyJson"],
+          message: "Body JSON khong hop le",
+        });
+      }
+    }
+
+    if (data.method === "POST" && data.bodyType === "form" && !data.bodyForm?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["bodyForm"],
+        message: "Form Data khong duoc de trong",
+      });
+    }
+  });
 
 app.use(helmet());
 app.use(cors(corsOptions));
@@ -168,6 +201,46 @@ app.post("/api/exposure-scans", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : "Exposure scan failed",
+    });
+  }
+});
+
+app.post("/api/sql-injection-scans", async (req, res) => {
+  const parsed = sqlInjectionScanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "Yeu cau SQL injection scan khong hop le",
+      issues: parsed.error.issues,
+    });
+    return;
+  }
+
+  const normalizedUrl = normalizeTargetUrl(parsed.data.url);
+  if (!normalizedUrl) {
+    res.status(400).json({
+      error: "Chi ho tro URL http hoac https",
+    });
+    return;
+  }
+
+  try {
+    const result = await runSqlInjectionScan({
+      url: normalizedUrl,
+      method: parsed.data.method,
+      ...(parsed.data.method === "POST" ? { bodyType: parsed.data.bodyType as ScanBodyType } : {}),
+      ...(parsed.data.method === "POST" && parsed.data.bodyType === "json" && parsed.data.bodyJson?.trim()
+        ? { bodyJson: parsed.data.bodyJson.trim() }
+        : {}),
+      ...(parsed.data.method === "POST" && parsed.data.bodyType === "form" && parsed.data.bodyForm?.trim()
+        ? { bodyForm: parsed.data.bodyForm.trim() }
+        : {}),
+      scenario: parsed.data.scenario,
+      hints: normalizeExposureHints(parsed.data.hints),
+    } satisfies SqlInjectionScanRequest);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "SQL injection scan failed",
     });
   }
 });

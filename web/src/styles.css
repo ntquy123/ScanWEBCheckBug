@@ -298,6 +298,8 @@ textarea {
 .findings-panel,
 .exposure-action,
 .exposure-panel,
+.sqli-action,
+.sqli-panel,
 .http-details {
   background: #ffffff;
   border: 1px solid #d8e0e7;
@@ -348,7 +350,8 @@ textarea {
   padding: 16px;
 }
 
-.exposure-action {
+.exposure-action,
+.sqli-action {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -357,14 +360,16 @@ textarea {
   padding: 16px;
 }
 
-.exposure-action h2 {
+.exposure-action h2,
+.sqli-action h2 {
   margin: 0;
   color: #17202a;
   font-size: 16px;
   line-height: 1.25;
 }
 
-.exposure-action button {
+.exposure-action button,
+.sqli-action button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -380,12 +385,20 @@ textarea {
   white-space: nowrap;
 }
 
-.exposure-action button:disabled {
+.exposure-action button:disabled,
+.sqli-action button:disabled {
   cursor: wait;
   opacity: 0.72;
 }
 
-.exposure-panel {
+.sqli-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.exposure-panel,
+.sqli-panel {
   margin-top: 18px;
   padding: 16px;
 }
@@ -533,6 +546,13 @@ textarea {
   font-size: 12px;
 }
 
+.finding-description {
+  margin: 0;
+  color: #263442;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .candidate ul,
 .finding ul,
 .exposure-item ul {
@@ -662,7 +682,8 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .exposure-action {
+  .exposure-action,
+  .sqli-action {
     align-items: flex-start;
     flex-direction: column;
   }

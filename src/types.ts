@@ -128,3 +128,37 @@ export interface ExposureScanResult {
   findings: ExposureFinding[];
   notes: string[];
 }
+
+export type SqlInjectionScenario = "inband" | "time";
+
+export interface SqlInjectionScanRequest {
+  url: string;
+  method: ScanMethod;
+  bodyType?: ScanBodyType;
+  bodyJson?: string;
+  bodyForm?: string;
+  scenario: SqlInjectionScenario;
+  hints?: ExposureScanHints;
+}
+
+export interface SqlInjectionFinding {
+  scenario: SqlInjectionScenario;
+  target: string;
+  dbms: string;
+  severity: FindingSeverity;
+  confidence: number;
+  description: string;
+  evidence: Evidence[];
+  recommendation?: string;
+}
+
+export interface SqlInjectionScanResult {
+  scannedAt: string;
+  durationMs: number;
+  scenario: SqlInjectionScenario;
+  checkedCount: number;
+  foundCount: number;
+  inferredDbms: string[];
+  findings: SqlInjectionFinding[];
+  notes: string[];
+}
