@@ -203,7 +203,19 @@ function scanRoom(jobId: string): string {
   return `scan:${jobId}`;
 }
 
-function parseScanResult(value: string): ScanResult | undefined {
+function parseScanResult(value: unknown): ScanResult | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  if (typeof value === "object") {
+    return value as ScanResult;
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
   try {
     return JSON.parse(value) as ScanResult;
   } catch {

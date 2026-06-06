@@ -150,6 +150,8 @@ export default function App() {
       setProgress(payload.progress);
       if (payload.progress.result) {
         setResult(payload.progress.result);
+      } else if (payload.progress.status === "completed") {
+        void refreshJob(payload.jobId);
       }
     });
 
@@ -158,7 +160,12 @@ export default function App() {
         return;
       }
       setProgress(payload.progress);
-      setResult(payload.result ?? payload.progress.result ?? null);
+      const nextResult = payload.result ?? payload.progress.result;
+      if (nextResult) {
+        setResult(nextResult);
+      } else {
+        void refreshJob(payload.jobId);
+      }
       setError(null);
     });
 
@@ -174,6 +181,21 @@ export default function App() {
       socket.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (!jobId || result || error) {
+      return;
+    }
+
+    const refreshDelay = progress.status === "completed" ? 900 : 2200;
+    const timer = window.setInterval(() => {
+      void refreshJob(jobId);
+    }, refreshDelay);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [error, jobId, progress.status, result]);
 
   async function startScan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -260,6 +282,10 @@ export default function App() {
   async function refreshJob(nextJobId: string) {
     const response = await fetch(`${API_BASE_URL}/api/scans/${nextJobId}`);
     if (!response.ok) {
+      return;
+    }
+
+    if (nextJobId !== activeJobRef.current) {
       return;
     }
 
